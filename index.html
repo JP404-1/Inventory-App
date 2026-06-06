@@ -383,6 +383,7 @@ a {
   <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
     <button id="scanBtn">Scan Barcode</button>
     <button id="addItemBtn" class="secondary">Add Item</button>
+    <button id="homeBtn" class="secondary" hidden>Home</button>
     <button id="addRoomBtn" class="secondary">Add Room</button>
     <button id="addCollectionBtn" class="secondary">Add Collection</button>
   </div>
@@ -796,11 +797,13 @@ function updateToolbar(room, collection) {
   const search = document.getElementById("search");
   const scanButton = document.getElementById("scanBtn");
   const addItemButton = document.getElementById("addItemBtn");
+  const homeButton = document.getElementById("homeBtn");
   const addRoomButton = document.getElementById("addRoomBtn");
   const addCollectionButton = document.getElementById("addCollectionBtn");
 
   scanButton.hidden = !collection;
   addItemButton.hidden = !collection;
+  homeButton.hidden = !room && !collection;
   addRoomButton.hidden = !!room;
   addCollectionButton.hidden = !room || !!collection;
 
@@ -867,7 +870,7 @@ function buildCollectionTile(collection, collectionItems) {
 }
 
 function buildDashboardView(container, rooms, collections, items, searchTerm) {
-  const accordion = createElement("div", { className: "accordion" });
+  const grid = createElement("div", { className: "tile-grid" });
   const visibleRooms = rooms.filter(room => {
     const roomCollections = collections.filter(collection => collection.roomId === room.id);
     const roomItems = getRoomItems(roomCollections, items);
@@ -883,72 +886,12 @@ function buildDashboardView(container, rooms, collections, items, searchTerm) {
   }
 
   visibleRooms.forEach(room => {
-    const roomCollections = collections.filter(collection => collection.roomId === room.id)
-      .filter(collection => collectionMatchesSearch(collection, getCollectionItems(collection, items), searchTerm));
+    const roomCollections = collections.filter(collection => collection.roomId === room.id);
     const roomItems = getRoomItems(roomCollections, items);
-    accordion.appendChild(buildRoomAccordion(room, roomCollections, roomItems, items));
+    grid.appendChild(buildRoomTile(room, roomCollections, roomItems));
   });
 
-  container.appendChild(accordion);
-}
-
-function buildRoomAccordion(room, roomCollections, roomItems, items) {
-  const details = document.createElement("details");
-  details.className = "accordion";
-  const summary = document.createElement("summary");
-
-  const titleBlock = createElement("div");
-  const title = createElement("h3", { text: room.name });
-  const meta = createElement("p", {
-    className: "muted",
-    text: `${roomCollections.length} ${pluralize(roomCollections.length, "collection")} · ${roomItems.length} ${pluralize(roomItems.length, "item")}`
-  });
-  titleBlock.append(title, meta);
-
-  const stats = createElement("div", { className: "tile-stats" });
-  stats.append(createStat(`$${formatMoney(sumItemValue(roomItems))}`));
-
-  summary.append(titleBlock, stats);
-  details.appendChild(summary);
-
-  const panel = createElement("div", { className: "details-panel" });
-  if (roomCollections.length === 0) {
-    panel.appendChild(createElement("p", { className: "muted", text: "No collections created for this room yet." }));
-  } else {
-    roomCollections.forEach(collection => {
-      panel.appendChild(buildCollectionRow(collection, getCollectionItems(collection, items)));
-    });
-  }
-
-  details.appendChild(panel);
-  return details;
-}
-
-function buildCollectionRow(collection, collectionItems) {
-  const row = createElement("div", { className: "collection-row" });
-  const label = createElement("div", { className: "collection-metadata" });
-  const name = createElement("strong", { text: collection.name });
-  const meta = createElement("span", {
-    className: "muted",
-    text: `${collectionItems.length} ${pluralize(collectionItems.length, "item")} · $${formatMoney(sumItemValue(collectionItems))}`
-  });
-  label.append(name, meta);
-
-  const actions = createElement("div", { className: "action-row" });
-  const openButton = createElement("button", { className: "secondary", text: "Open" });
-  openButton.addEventListener("click", event => {
-    event.stopPropagation();
-    setView(collection.roomId, collection.id);
-  });
-  const deleteButton = createElement("button", { className: "danger", text: "Delete" });
-  deleteButton.addEventListener("click", async event => {
-    event.stopPropagation();
-    await deleteCollection(collection.id);
-  });
-
-  actions.append(openButton, deleteButton);
-  row.append(label, actions);
-  return row;
+  container.appendChild(grid);
 }
 
 function buildRoomView(container, room, collections, items, searchTerm) {
@@ -1734,6 +1677,9 @@ document.getElementById("addItemBtn").addEventListener("click", async () => {
   if (collectionId !== null) {
     void addItem(collectionId);
   }
+});
+document.getElementById("homeBtn").addEventListener("click", () => {
+  setView();
 });
 window.addEventListener("pagehide", cleanupObjectUrls);
 
