@@ -7,7 +7,7 @@ const APP_SHELL = [
   "./icon 512.png"
 ];
 const OPTIONAL_CACHE = [
-  "https://unpkg.com/@zxing/browser@0.1.5/umd/index.min.js"
+  "https://unpkg.com/@zxing/browser@latest"
 ];
 
 self.addEventListener("install", event => {
