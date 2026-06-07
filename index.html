@@ -1463,6 +1463,8 @@ async function chooseCollectionId() {
   alert("Could not match the selected collection.");
   return null;
 }
+console.log("ZXingBrowser =", window.ZXingBrowser);
+console.log("mediaDevices =", navigator.mediaDevices);
 
 async function scanBarcode() {
   if (!window.ZXingBrowser || !navigator.mediaDevices) {
