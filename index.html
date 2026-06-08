@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Inventory Manager PWA</title>
 <link rel="manifest" href="manifest.json">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
 <script src="https://unpkg.com/@zxing/browser@latest"></script>
 <style>
 :root {
@@ -316,11 +317,149 @@ input {
   display: block;
 }
 
-.access-denied {
-  min-height: 100vh;
+.scanner-spinner {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 4px solid rgba(255,255,255,0.12);
+  border-top-color: var(--accent);
+  animation: scanner-spin 900ms linear infinite;
+  margin: 0 auto;
+}
+@keyframes scanner-spin {
+  to { transform: rotate(360deg); }
+}
+
+.scanner-frame {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(420px, 86%);
+  height: min(300px, 60%);
+  transform: translate(-50%, -50%);
+  border: 3px solid rgba(63, 182, 139, 0.95);
+  border-radius: 16px;
+  box-shadow: 0 0 40px rgba(63, 182, 139, 0.18), inset 0 0 24px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  display: none;
+}
+
+.scanner-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px rgba(63, 182, 139, 0.25);
+  pointer-events: none;
+}
+
+.scan-line {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, rgba(63, 182, 139, 0) 0%, rgba(63, 182, 139, 0.95) 50%, rgba(63, 182, 139, 0) 100%);
+  transform: translateY(-100%);
+  opacity: 0;
+}
+
+.scan-line.running {
+  animation: scan-slide 1.5s linear infinite;
+}
+
+@keyframes scan-slide {
+  0% { transform: translateY(-10%); opacity: 0; }
+  10% { opacity: 1; }
+  50% { transform: translateY(100%); opacity: 1; }
+  90% { opacity: 0; }
+  100% { transform: translateY(110%); opacity: 0; }
+}
+
+.scanner-video {
+  position: relative;
+}
+
+.scanner-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 6%;
+  transform: translateX(-50%);
+  background: rgba(14, 28, 22, 0.96);
+  color: #dff6ea;
+  border: 1px solid rgba(63, 182, 139, 0.24);
+  padding: 0.7rem 1.1rem;
+  border-radius: 999px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 160ms ease, transform 160ms ease;
+  pointer-events: none;
+  z-index: 10000;
+}
+.scanner-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Auth overlay (glassmorphism) */
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
   display: grid;
   place-items: center;
-  padding: 2rem;
+  background: rgba(3, 8, 12, 0.5);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+}
+
+.auth-panel {
+  width: min(460px, calc(100% - 2rem));
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+  border: 1px solid rgba(159, 176, 200, 0.12);
+  border-radius: 20px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  padding: 1.25rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.auth-panel h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+}
+
+.auth-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.auth-input {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(159, 176, 200, 0.12);
+  background: rgba(10, 17, 29, 0.75);
+  color: var(--text);
+}
+
+.auth-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.auth-toggle {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
   text-align: center;
 }
 
@@ -344,6 +483,7 @@ a {
     align-items: flex-start;
   }
 }
+
 </style>
 </head>
 <body>
@@ -356,6 +496,31 @@ a {
     <button id="installBtn" class="secondary" hidden>Install App</button>
   </div>
 </header>
+
+<div id="authOverlay" class="auth-overlay" hidden>
+  <form id="authPanel" class="auth-panel" autocomplete="off">
+    <h3>Sign in to Inventory Manager</h3>
+
+    <div class="auth-field">
+      <label class="muted" for="authEmail">Email</label>
+      <input id="authEmail" class="auth-input" type="email" required />
+    </div>
+
+    <div class="auth-field">
+      <label class="muted" for="authPassword">Password</label>
+      <input id="authPassword" class="auth-input" type="password" required />
+    </div>
+
+    <div class="auth-actions">
+      <button type="button" id="authCancel" class="secondary">Cancel</button>
+      <button type="submit" id="authSubmit">Sign In</button>
+    </div>
+
+    <div style="text-align:center;">
+      <button type="button" id="signOutBtn" class="auth-toggle" hidden>Sign out</button>
+    </div>
+  </form>
+</div>
 
 <main class="app-shell">
   <section class="summary">
@@ -415,6 +580,50 @@ let isAddingItem = false;
 let currentRoomId = null;
 let currentCollectionId = null;
 const activeObjectUrls = new Set();
+
+const SUPABASE_URL = "https://noiwkbfsgyqicxaoatfx.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_T_ad2hGo4-lZZBcFchUMyw_MuQN3TRV";
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+function showAuthOverlay(show = true) {
+  const overlay = document.getElementById("authOverlay");
+  overlay.hidden = !show;
+  if (show) {
+    setTimeout(() => document.getElementById("authEmail").focus(), 0);
+  }
+}
+
+function updateAuthStateUI(session) {
+  document.getElementById("signOutBtn").hidden = !session;
+}
+
+async function handleSignIn(event) {
+  event.preventDefault();
+  const email = document.getElementById("authEmail").value.trim();
+  const password = document.getElementById("authPassword").value;
+  if (!email || !password) {
+    showToast("Enter email and password");
+    return;
+  }
+
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if (error) {
+    showToast(error.message || "Sign-in failed");
+    return;
+  }
+
+  showToast("Signed in ✓");
+  showAuthOverlay(false);
+  updateAuthStateUI(data.session);
+  await render();
+}
+
+async function handleSignOut() {
+  await supabaseClient.auth.signOut();
+  showToast("Signed out");
+  updateAuthStateUI(null);
+  showAuthOverlay(true);
+}
 
 function requestToPromise(request) {
   return new Promise((resolve, reject) => {
@@ -534,50 +743,22 @@ function trackedObjectUrl(file) {
   return url;
 }
 
-async function hashPIN(pin) {
-  const encoded = new TextEncoder().encode(pin);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", encoded);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map(byte => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
+function showToast(text, duration = 1300) {
+  let toast = document.querySelector(".scanner-toast");
 
-async function verifyPIN() {
-  const record = await getRecord(STORE_AUTH, "pin");
-  if (!record) {
-    return true;
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.className = "scanner-toast";
+    document.body.appendChild(toast);
   }
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const input = prompt("Enter PIN:");
-    if (input === null) {
-      return false;
-    }
+  toast.textContent = text;
+  toast.classList.add("show");
 
-    const hash = await hashPIN(input.trim());
-    if (hash === record.value) {
-      return true;
-    }
-
-    alert("Incorrect PIN.");
-  }
-
-  return false;
-}
-
-function showAccessDenied() {
-  document.body.innerHTML = "";
-  const wrapper = createElement("div", { className: "access-denied" });
-  const panel = createElement("div", { className: "panel" });
-  const title = createElement("h2", { text: "Access Denied" });
-  const message = createElement("p", {
-    className: "muted",
-    text: "The PIN was not verified. Refresh to try again."
-  });
-
-  panel.append(title, message);
-  wrapper.appendChild(panel);
-  document.body.appendChild(wrapper);
+  clearTimeout(toast._hideTimer);
+  toast._hideTimer = setTimeout(() => {
+    toast.classList.remove("show");
+  }, duration);
 }
 
 function buildItemCard(item) {
@@ -696,9 +877,14 @@ function getCollectionItems(collection, items) {
   return items.filter(item => item.collectionId === collection.id);
 }
 
-function getRoomItems(roomCollections, items) {
+function getRoomItems(roomCollections, items, roomId = null) {
   const collectionIds = new Set(roomCollections.map(collection => collection.id));
-  return items.filter(item => collectionIds.has(item.collectionId));
+  return items.filter(item => collectionIds.has(item.collectionId)
+    || (roomId !== null && item.roomId === roomId && !item.collectionId));
+}
+
+function getRoomDirectItems(room, items) {
+  return items.filter(item => item.roomId === room.id && !item.collectionId);
 }
 
 function itemMatchesSearch(item, searchTerm) {
@@ -801,8 +987,8 @@ function updateToolbar(room, collection) {
   const addRoomButton = document.getElementById("addRoomBtn");
   const addCollectionButton = document.getElementById("addCollectionBtn");
 
-  scanButton.hidden = !collection;
-  addItemButton.hidden = !collection;
+  scanButton.hidden = !(room || collection);
+  addItemButton.hidden = !(room || collection);
   homeButton.hidden = !room && !collection;
   addRoomButton.hidden = !!room;
   addCollectionButton.hidden = !room || !!collection;
@@ -810,7 +996,7 @@ function updateToolbar(room, collection) {
   if (collection) {
     search.placeholder = `Search ${collection.name} items...`;
   } else if (room) {
-    search.placeholder = `Search ${room.name} collections...`;
+    search.placeholder = `Search ${room.name} items and collections...`;
   } else {
     search.placeholder = "Search rooms, collections, or items...";
   }
@@ -900,21 +1086,34 @@ function buildRoomView(container, room, collections, items, searchTerm) {
     const collectionItems = getCollectionItems(collection, items);
     return collectionMatchesSearch(collection, collectionItems, searchTerm);
   });
-  const grid = createElement("div", { className: "tile-grid" });
+  const visibleRoomItems = getRoomDirectItems(room, items)
+    .filter(item => itemMatchesSearch(item, searchTerm));
 
-  if (visibleCollections.length === 0) {
+  if (visibleRoomItems.length === 0 && visibleCollections.length === 0) {
     container.appendChild(createElement("div", {
       className: "empty-state",
-      text: searchTerm ? "No collections match the current search." : "No collections yet."
+      text: searchTerm ? "No items or collections match the current search." : "No items or collections yet."
     }));
     return;
   }
 
-  visibleCollections.forEach(collection => {
-    grid.appendChild(buildCollectionTile(collection, getCollectionItems(collection, items)));
-  });
+  if (visibleRoomItems.length > 0) {
+    container.appendChild(createElement("h3", { text: "Room Items" }));
+    visibleRoomItems.forEach(item => {
+      container.appendChild(buildItemCard(item));
+    });
+  }
 
-  container.appendChild(grid);
+  if (visibleCollections.length > 0) {
+    const collectionHeader = createElement("h3", { text: "Collections" });
+    container.appendChild(collectionHeader);
+
+    const grid = createElement("div", { className: "tile-grid" });
+    visibleCollections.forEach(collection => {
+      grid.appendChild(buildCollectionTile(collection, getCollectionItems(collection, items)));
+    });
+    container.appendChild(grid);
+  }
 }
 
 function buildCollectionView(container, collection, items, searchTerm) {
@@ -1069,7 +1268,7 @@ async function addCollection(roomId) {
   await render();
 }
 
-async function addItem(collectionId) {
+async function addItem(collectionId = null, roomId = null) {
   if (isAddingItem) {
     alert("Finish the current item before adding another.");
     return;
@@ -1078,6 +1277,22 @@ async function addItem(collectionId) {
   isAddingItem = true;
 
   try {
+    if (!collectionId) {
+      roomId = roomId || currentRoomId;
+    }
+
+    if (!collectionId && !roomId) {
+      roomId = await chooseRoomId();
+      if (roomId === null) {
+        return;
+      }
+    }
+
+    if (collectionId && !roomId) {
+      const collection = await getRecord(STORE_COLLECTIONS, collectionId);
+      roomId = collection?.roomId ?? null;
+    }
+
     const name = prompt("Item name?");
     if (name === null) {
       return;
@@ -1111,7 +1326,8 @@ async function addItem(collectionId) {
         estimatedPrice: null,
         currentPrice: purchaseInput.value,
         updated: Date.now(),
-        collectionId
+        collectionId,
+        roomId
       });
     } catch (err) {
       console.error("Failed to add item:", err);
@@ -1125,7 +1341,7 @@ async function addItem(collectionId) {
   }
 }
 
-async function addScannedItem(collectionId) {
+async function addScannedItem(collectionId = null, roomId = null) {
   if (isAddingItem) {
     alert("Finish the current item before adding another.");
     return;
@@ -1134,6 +1350,22 @@ async function addScannedItem(collectionId) {
   isAddingItem = true;
 
   try {
+    if (!collectionId) {
+      roomId = roomId || currentRoomId;
+    }
+
+    if (!collectionId && !roomId) {
+      roomId = await chooseRoomId();
+      if (roomId === null) {
+        return;
+      }
+    }
+
+    if (collectionId && !roomId) {
+      const collection = await getRecord(STORE_COLLECTIONS, collectionId);
+      roomId = collection?.roomId ?? null;
+    }
+
     const barcode = await scanBarcode();
     if (!barcode || typeof barcode !== "string") {
       return;
@@ -1155,7 +1387,8 @@ async function addScannedItem(collectionId) {
         estimatedPrice: details.price,
         currentPrice: details.price,
         updated: Date.now(),
-        collectionId
+        collectionId,
+        roomId
       });
     } catch (err) {
       console.error("Failed to add scanned item:", err);
@@ -1481,11 +1714,16 @@ async function scanBarcode() {
     });
     const videoWrap = createElement("div", { className: "scanner-video" });
     const video = document.createElement("video");
+    const spinner = createElement("div", { className: "scanner-spinner" });
+    const frame = createElement("div", { className: "scanner-frame" });
+    const scanLine = createElement("div", { className: "scan-line" });
     const cancelButton = createElement("button", { className: "secondary", text: "Cancel" });
     const skipButton = createElement("button", { className: "secondary", text: "Skip" });
 
+    frame.appendChild(scanLine);
     videoWrap.appendChild(video);
-    panel.append(label, videoWrap, cancelButton, skipButton);
+    videoWrap.appendChild(frame);
+    panel.append(label, spinner, videoWrap, cancelButton, skipButton);
     overlay.appendChild(panel);
     document.body.appendChild(overlay);
 
@@ -1493,12 +1731,13 @@ async function scanBarcode() {
     let settled = false;
 
     const finish = async value => {
-      if (settled) {
-        return;
-      }
-
+      if (settled) return;
       settled = true;
-      controls?.stop();
+      try {
+        controls?.stop();
+      } catch (error) {
+        console.warn("Failed to stop scanner controls:", error);
+      }
       overlay.remove();
       resolve(value);
     };
@@ -1509,16 +1748,23 @@ async function scanBarcode() {
     });
 
     skipButton.addEventListener("click", async () => {
-      await finish(null); // Skip barcode entry
+      await finish(null);
     });
 
     try {
       controls = await codeReader.decodeFromVideoDevice(null, video, async result => {
         if (result) {
+          showToast("Barcode Found ✓");
+          scanLine.classList.remove("running");
           await finish(result.getText());
         }
       });
+
+      spinner.style.display = "none";
+      frame.style.display = "block";
+      requestAnimationFrame(() => scanLine.classList.add("running"));
     } catch {
+      spinner.style.display = "none";
       const manual = await manualBarcodeEntry("Camera failed. Enter barcode manually (or leave empty to skip):");
       await finish(manual);
     }
@@ -1669,31 +1915,51 @@ document.getElementById("addCollectionBtn").addEventListener("click", async () =
   }
 });
 document.getElementById("scanBtn").addEventListener("click", async () => {
-  const collectionId = currentCollectionId || await chooseCollectionId();
-  if (collectionId !== null) {
-    void addScannedItem(collectionId);
+  let collectionId = currentCollectionId || null;
+  let roomId = currentRoomId || null;
+  if (!collectionId && !roomId) {
+    roomId = await chooseRoomId();
+    if (roomId === null) {
+      return;
+    }
   }
+  void addScannedItem(collectionId, roomId);
 });
 document.getElementById("addItemBtn").addEventListener("click", async () => {
-  const collectionId = currentCollectionId || await chooseCollectionId();
-  if (collectionId !== null) {
-    void addItem(collectionId);
+  let collectionId = currentCollectionId || null;
+  let roomId = currentRoomId || null;
+  if (!collectionId && !roomId) {
+    roomId = await chooseRoomId();
+    if (roomId === null) {
+      return;
+    }
   }
+  void addItem(collectionId, roomId);
 });
 document.getElementById("homeBtn").addEventListener("click", () => {
   setView();
 });
+document.getElementById("authPanel").addEventListener("submit", handleSignIn);
+document.getElementById("authCancel").addEventListener("click", () => showAuthOverlay(false));
+document.getElementById("signOutBtn").addEventListener("click", handleSignOut);
 window.addEventListener("pagehide", cleanupObjectUrls);
 
 (async () => {
   await openDB();
-  const access = await verifyPIN();
-  if (!access) {
-    showAccessDenied();
-    return;
+  await render();
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  updateAuthStateUI(session);
+  if (!session) {
+    showAuthOverlay(true);
   }
 
-  await render();
+  supabaseClient.auth.onAuthStateChange((_event, session) => {
+    updateAuthStateUI(session);
+    if (session) {
+      showAuthOverlay(false);
+    }
+  });
 
   if ("serviceWorker" in navigator) {
     try {
@@ -1703,6 +1969,3 @@ window.addEventListener("pagehide", cleanupObjectUrls);
     }
   }
 })();
-</script>
-</body>
-</html>
