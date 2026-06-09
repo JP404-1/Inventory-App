@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Inventory Manager PWA</title>
 <link rel="manifest" href="manifest.json">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
 <script src="https://unpkg.com/@zxing/browser@latest"></script>
 <style>
 :root {
@@ -401,65 +400,11 @@ input {
   transform: translateX(-50%) translateY(0);
 }
 
-/* Auth overlay (glassmorphism) */
-.auth-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 11000;
-  display: none !important;
+.access-denied {
+  min-height: 100vh;
+  display: grid;
   place-items: center;
-  background: rgba(3, 8, 12, 0.5);
-  backdrop-filter: blur(9px);
-  -webkit-backdrop-filter: blur(9px);
-}
-
-.auth-panel {
-  width: min(460px, calc(100% - 2rem));
-  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
-  border: 1px solid rgba(159, 176, 200, 0.12);
-  border-radius: 20px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
-  padding: 1.25rem;
-  display: grid;
-  gap: 0.85rem;
-}
-
-.auth-panel h3 {
-  margin: 0;
-  font-size: 1.1rem;
-  letter-spacing: 0.02em;
-}
-
-.auth-field {
-  display: grid;
-  gap: 0.35rem;
-}
-
-.auth-input {
-  width: 100%;
-  padding: 0.9rem 1rem;
-  border-radius: 14px;
-  border: 1px solid rgba(159, 176, 200, 0.12);
-  background: rgba(10, 17, 29, 0.75);
-  color: var(--text);
-}
-
-.auth-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.auth-toggle {
-  background: transparent;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-weight: 700;
-  text-decoration: underline;
-}
-
+  padding: 2rem;
   text-align: center;
 }
 
@@ -496,31 +441,6 @@ a {
     <button id="installBtn" class="secondary" hidden>Install App</button>
   </div>
 </header>
-
-<div id="authOverlay" class="auth-overlay" hidden>
-  <form id="authPanel" class="auth-panel" autocomplete="off">
-    <h3>Sign in to Inventory Manager</h3>
-
-    <div class="auth-field">
-      <label class="muted" for="authEmail">Email</label>
-      <input id="authEmail" class="auth-input" type="email" required />
-    </div>
-
-    <div class="auth-field">
-      <label class="muted" for="authPassword">Password</label>
-      <input id="authPassword" class="auth-input" type="password" required />
-    </div>
-
-    <div class="auth-actions">
-      <button type="button" id="authCancel" class="secondary">Cancel</button>
-      <button type="submit" id="authSubmit">Sign In</button>
-    </div>
-
-    <div style="text-align:center;">
-      <button type="button" id="signOutBtn" class="auth-toggle" hidden>Sign out</button>
-    </div>
-  </form>
-</div>
 
 <main class="app-shell">
   <section class="summary">
@@ -581,66 +501,6 @@ let currentRoomId = null;
 let currentCollectionId = null;
 const activeObjectUrls = new Set();
 
-const SUPABASE_URL = "https://noiwkbfsgyqicxaoatfx.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_T_ad2hGo4-lZZBcFchUMyw_MuQN3TRV";
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-function showAuthOverlay(show = true) {
-  const overlay = document.getElementById("authOverlay");
-  overlay.hidden = !show;
-  if (show) {
-    setTimeout(() => document.getElementById("authEmail").focus(), 0);
-  }
-}
-
-function updateAuthStateUI(session) {
-  document.getElementById("signOutBtn").hidden = !session;
-}
-
-async function handleSignIn(event) {
-  event.preventDefault();
-  const email = document.getElementById("authEmail").value.trim();
-  const password = document.getElementById("authPassword").value;
-  if (!email || !password) {
-    showToast("Enter email and password");
-    return;
-  }
-
-  try {
-    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-    
-    if (error) {
-      console.error("Sign-in error:", error);
-      showToast(error.message || "Sign-in failed");
-      return;
-    }
-
-    if (!data || !data.session) {
-      console.error("No session returned from sign-in");
-      showToast("Sign-in failed: no session");
-      return;
-    }
-
-    console.log("Sign-in successful:", data.user.email);
-    document.getElementById("authEmail").value = "";
-    document.getElementById("authPassword").value = "";
-    showToast("Signed in ✓");
-    showAuthOverlay(false);
-    updateAuthStateUI(data.session);
-    await render();
-  } catch (err) {
-    console.error("Sign-in exception:", err);
-    showToast(err.message || "Sign-in error");
-  }
-}
-
-async function handleSignOut() {
-  await supabaseClient.auth.signOut();
-  showToast("Signed out");
-  updateAuthStateUI(null);
-  showAuthOverlay(true);
-}
-
 function requestToPromise(request) {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
@@ -687,77 +547,15 @@ function store(name, mode = "readonly") {
   return db.transaction(name, mode).objectStore(name);
 }
 
-function storeNameToTableName(storeName) {
-  const mapping = {
-    [STORE_ROOMS]: "rooms",
-    [STORE_COLLECTIONS]: "collections",
-    [STORE_ITEMS]: "items"
-  };
-  return mapping[storeName];
-}
-
-function convertToSnakeCase(obj) {
-  const result = {};
-  for (const [key, value] of Object.entries(obj)) {
-    const snakeCaseKey = key.replace(/([A-Z])/g, "_$1").toLowerCase();
-    result[snakeCaseKey] = value;
-  }
-  return result;
-}
-
-function convertToCamelCase(obj) {
-  const result = {};
-  for (const [key, value] of Object.entries(obj)) {
-    const camelCaseKey = key.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
-    result[camelCaseKey] = value;
-  }
-  return result;
-}
-
-async function syncToSupabase(operation, storeName, data, id = null) {
-  try {
-    const { data: { session } } = await supabaseClient.auth.getSession();
-    if (!session) {
-      return;
-    }
-
-    const tableName = storeNameToTableName(storeName);
-    if (!tableName) {
-      return;
-    }
-
-    const snakeCaseData = convertToSnakeCase(data || {});
-
-    switch (operation) {
-      case "insert":
-        await supabaseClient.from(tableName).insert([snakeCaseData]);
-        break;
-      case "update":
-        await supabaseClient.from(tableName).update(snakeCaseData).eq("id", id);
-        break;
-      case "delete":
-        await supabaseClient.from(tableName).delete().eq("id", id);
-        break;
-    }
-  } catch (err) {
-    console.warn("Supabase sync error:", err);
-  }
-}
-
-async function addRecord(name, value) {
-  const result = await requestToPromise(store(name, "readwrite").add(value));
-  const recordWithId = { ...value, id: result };
-  await syncToSupabase("insert", name, recordWithId);
-  return result;
+function addRecord(name, value) {
+  return requestToPromise(store(name, "readwrite").add(value));
 }
 
 function putRecord(name, value) {
-  syncToSupabase("update", name, value, value.id).catch(console.error);
   return requestToPromise(store(name, "readwrite").put(value));
 }
 
 function deleteRecord(name, key) {
-  syncToSupabase("delete", name, {}, key).catch(console.error);
   return requestToPromise(store(name, "readwrite").delete(key));
 }
 
@@ -955,14 +753,9 @@ function getCollectionItems(collection, items) {
   return items.filter(item => item.collectionId === collection.id);
 }
 
-function getRoomItems(roomCollections, items, roomId = null) {
+function getRoomItems(roomCollections, items) {
   const collectionIds = new Set(roomCollections.map(collection => collection.id));
-  return items.filter(item => collectionIds.has(item.collectionId)
-    || (roomId !== null && item.roomId === roomId && !item.collectionId));
-}
-
-function getRoomDirectItems(room, items) {
-  return items.filter(item => item.roomId === room.id && !item.collectionId);
+  return items.filter(item => collectionIds.has(item.collectionId));
 }
 
 function itemMatchesSearch(item, searchTerm) {
@@ -1065,8 +858,8 @@ function updateToolbar(room, collection) {
   const addRoomButton = document.getElementById("addRoomBtn");
   const addCollectionButton = document.getElementById("addCollectionBtn");
 
-  scanButton.hidden = !(room || collection);
-  addItemButton.hidden = !(room || collection);
+  scanButton.hidden = !collection;
+  addItemButton.hidden = !collection;
   homeButton.hidden = !room && !collection;
   addRoomButton.hidden = !!room;
   addCollectionButton.hidden = !room || !!collection;
@@ -1074,7 +867,7 @@ function updateToolbar(room, collection) {
   if (collection) {
     search.placeholder = `Search ${collection.name} items...`;
   } else if (room) {
-    search.placeholder = `Search ${room.name} items and collections...`;
+    search.placeholder = `Search ${room.name} collections...`;
   } else {
     search.placeholder = "Search rooms, collections, or items...";
   }
@@ -1164,34 +957,21 @@ function buildRoomView(container, room, collections, items, searchTerm) {
     const collectionItems = getCollectionItems(collection, items);
     return collectionMatchesSearch(collection, collectionItems, searchTerm);
   });
-  const visibleRoomItems = getRoomDirectItems(room, items)
-    .filter(item => itemMatchesSearch(item, searchTerm));
+  const grid = createElement("div", { className: "tile-grid" });
 
-  if (visibleRoomItems.length === 0 && visibleCollections.length === 0) {
+  if (visibleCollections.length === 0) {
     container.appendChild(createElement("div", {
       className: "empty-state",
-      text: searchTerm ? "No items or collections match the current search." : "No items or collections yet."
+      text: searchTerm ? "No collections match the current search." : "No collections yet."
     }));
     return;
   }
 
-  if (visibleRoomItems.length > 0) {
-    container.appendChild(createElement("h3", { text: "Room Items" }));
-    visibleRoomItems.forEach(item => {
-      container.appendChild(buildItemCard(item));
-    });
-  }
+  visibleCollections.forEach(collection => {
+    grid.appendChild(buildCollectionTile(collection, getCollectionItems(collection, items)));
+  });
 
-  if (visibleCollections.length > 0) {
-    const collectionHeader = createElement("h3", { text: "Collections" });
-    container.appendChild(collectionHeader);
-
-    const grid = createElement("div", { className: "tile-grid" });
-    visibleCollections.forEach(collection => {
-      grid.appendChild(buildCollectionTile(collection, getCollectionItems(collection, items)));
-    });
-    container.appendChild(grid);
-  }
+  container.appendChild(grid);
 }
 
 function buildCollectionView(container, collection, items, searchTerm) {
@@ -1346,7 +1126,7 @@ async function addCollection(roomId) {
   await render();
 }
 
-async function addItem(collectionId = null, roomId = null) {
+async function addItem(collectionId) {
   if (isAddingItem) {
     alert("Finish the current item before adding another.");
     return;
@@ -1355,22 +1135,6 @@ async function addItem(collectionId = null, roomId = null) {
   isAddingItem = true;
 
   try {
-    if (!collectionId) {
-      roomId = roomId || currentRoomId;
-    }
-
-    if (!collectionId && !roomId) {
-      roomId = await chooseRoomId();
-      if (roomId === null) {
-        return;
-      }
-    }
-
-    if (collectionId && !roomId) {
-      const collection = await getRecord(STORE_COLLECTIONS, collectionId);
-      roomId = collection?.roomId ?? null;
-    }
-
     const name = prompt("Item name?");
     if (name === null) {
       return;
@@ -1404,8 +1168,7 @@ async function addItem(collectionId = null, roomId = null) {
         estimatedPrice: null,
         currentPrice: purchaseInput.value,
         updated: Date.now(),
-        collectionId,
-        roomId
+        collectionId
       });
     } catch (err) {
       console.error("Failed to add item:", err);
@@ -1419,7 +1182,7 @@ async function addItem(collectionId = null, roomId = null) {
   }
 }
 
-async function addScannedItem(collectionId = null, roomId = null) {
+async function addScannedItem(collectionId) {
   if (isAddingItem) {
     alert("Finish the current item before adding another.");
     return;
@@ -1428,22 +1191,6 @@ async function addScannedItem(collectionId = null, roomId = null) {
   isAddingItem = true;
 
   try {
-    if (!collectionId) {
-      roomId = roomId || currentRoomId;
-    }
-
-    if (!collectionId && !roomId) {
-      roomId = await chooseRoomId();
-      if (roomId === null) {
-        return;
-      }
-    }
-
-    if (collectionId && !roomId) {
-      const collection = await getRecord(STORE_COLLECTIONS, collectionId);
-      roomId = collection?.roomId ?? null;
-    }
-
     const barcode = await scanBarcode();
     if (!barcode || typeof barcode !== "string") {
       return;
@@ -1465,8 +1212,7 @@ async function addScannedItem(collectionId = null, roomId = null) {
         estimatedPrice: details.price,
         currentPrice: details.price,
         updated: Date.now(),
-        collectionId,
-        roomId
+        collectionId
       });
     } catch (err) {
       console.error("Failed to add scanned item:", err);
@@ -1993,64 +1739,25 @@ document.getElementById("addCollectionBtn").addEventListener("click", async () =
   }
 });
 document.getElementById("scanBtn").addEventListener("click", async () => {
-  let collectionId = currentCollectionId || null;
-  let roomId = currentRoomId || null;
-  if (!collectionId && !roomId) {
-    roomId = await chooseRoomId();
-    if (roomId === null) {
-      return;
-    }
+  const collectionId = currentCollectionId || await chooseCollectionId();
+  if (collectionId !== null) {
+    void addScannedItem(collectionId);
   }
-  void addScannedItem(collectionId, roomId);
 });
 document.getElementById("addItemBtn").addEventListener("click", async () => {
-  let collectionId = currentCollectionId || null;
-  let roomId = currentRoomId || null;
-  if (!collectionId && !roomId) {
-    roomId = await chooseRoomId();
-    if (roomId === null) {
-      return;
-    }
+  const collectionId = currentCollectionId || await chooseCollectionId();
+  if (collectionId !== null) {
+    void addItem(collectionId);
   }
-  void addItem(collectionId, roomId);
 });
 document.getElementById("homeBtn").addEventListener("click", () => {
   setView();
 });
-document.getElementById("authPanel").addEventListener("submit", handleSignIn);
-document.getElementById("authCancel").addEventListener("click", () => showAuthOverlay(false));
-document.getElementById("signOutBtn").addEventListener("click", handleSignOut);
 window.addEventListener("pagehide", cleanupObjectUrls);
 
 (async () => {
-  try {
-    await openDB();
-    await render();
-
-    // Initialize Supabase for optional data sync
-    if (!supabaseClient || !supabaseClient.auth) {
-      console.warn("Supabase client not initialized");
-    } else {
-      const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
-      if (sessionError) {
-        console.warn("Failed to get session:", sessionError);
-      }
-
-      if (session) {
-        console.log("Session restored for:", session.user.email);
-        updateAuthStateUI(session);
-      } else {
-        updateAuthStateUI(null);
-      }
-
-      supabaseClient.auth.onAuthStateChange((_event, session) => {
-        console.log("Auth state changed:", _event, !!session);
-        updateAuthStateUI(session);
-      });
-    }
-  } catch (err) {
-    console.error("Startup error:", err);
-  }
+  await openDB();
+  await render();
 
   if ("serviceWorker" in navigator) {
     try {
@@ -2060,3 +1767,6 @@ window.addEventListener("pagehide", cleanupObjectUrls);
     }
   }
 })();
+</script>
+</body>
+</html>
