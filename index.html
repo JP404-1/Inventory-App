@@ -606,16 +606,32 @@ async function handleSignIn(event) {
     return;
   }
 
-  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-  if (error) {
-    showToast(error.message || "Sign-in failed");
-    return;
-  }
+  try {
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    
+    if (error) {
+      console.error("Sign-in error:", error);
+      showToast(error.message || "Sign-in failed");
+      return;
+    }
 
-  showToast("Signed in ✓");
-  showAuthOverlay(false);
-  updateAuthStateUI(data.session);
-  await render();
+    if (!data || !data.session) {
+      console.error("No session returned from sign-in");
+      showToast("Sign-in failed: no session");
+      return;
+    }
+
+    console.log("Sign-in successful:", data.user.email);
+    document.getElementById("authEmail").value = "";
+    document.getElementById("authPassword").value = "";
+    showToast("Signed in ✓");
+    showAuthOverlay(false);
+    updateAuthStateUI(data.session);
+    await render();
+  } catch (err) {
+    console.error("Sign-in exception:", err);
+    showToast(err.message || "Sign-in error");
+  }
 }
 
 async function handleSignOut() {
@@ -671,15 +687,77 @@ function store(name, mode = "readonly") {
   return db.transaction(name, mode).objectStore(name);
 }
 
-function addRecord(name, value) {
-  return requestToPromise(store(name, "readwrite").add(value));
+function storeNameToTableName(storeName) {
+  const mapping = {
+    [STORE_ROOMS]: "rooms",
+    [STORE_COLLECTIONS]: "collections",
+    [STORE_ITEMS]: "items"
+  };
+  return mapping[storeName];
+}
+
+function convertToSnakeCase(obj) {
+  const result = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const snakeCaseKey = key.replace(/([A-Z])/g, "_$1").toLowerCase();
+    result[snakeCaseKey] = value;
+  }
+  return result;
+}
+
+function convertToCamelCase(obj) {
+  const result = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelCaseKey = key.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+    result[camelCaseKey] = value;
+  }
+  return result;
+}
+
+async function syncToSupabase(operation, storeName, data, id = null) {
+  try {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session) {
+      return;
+    }
+
+    const tableName = storeNameToTableName(storeName);
+    if (!tableName) {
+      return;
+    }
+
+    const snakeCaseData = convertToSnakeCase(data || {});
+
+    switch (operation) {
+      case "insert":
+        await supabaseClient.from(tableName).insert([snakeCaseData]);
+        break;
+      case "update":
+        await supabaseClient.from(tableName).update(snakeCaseData).eq("id", id);
+        break;
+      case "delete":
+        await supabaseClient.from(tableName).delete().eq("id", id);
+        break;
+    }
+  } catch (err) {
+    console.warn("Supabase sync error:", err);
+  }
+}
+
+async function addRecord(name, value) {
+  const result = await requestToPromise(store(name, "readwrite").add(value));
+  const recordWithId = { ...value, id: result };
+  await syncToSupabase("insert", name, recordWithId);
+  return result;
 }
 
 function putRecord(name, value) {
+  syncToSupabase("update", name, value, value.id).catch(console.error);
   return requestToPromise(store(name, "readwrite").put(value));
 }
 
 function deleteRecord(name, key) {
+  syncToSupabase("delete", name, {}, key).catch(console.error);
   return requestToPromise(store(name, "readwrite").delete(key));
 }
 
@@ -1945,21 +2023,42 @@ document.getElementById("signOutBtn").addEventListener("click", handleSignOut);
 window.addEventListener("pagehide", cleanupObjectUrls);
 
 (async () => {
-  await openDB();
-  await render();
+  try {
+    await openDB();
+    await render();
 
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  updateAuthStateUI(session);
-  if (!session) {
+    // Check if supabaseClient is properly initialized
+    if (!supabaseClient || !supabaseClient.auth) {
+      console.error("Supabase client not initialized");
+      showAuthOverlay(true);
+      return;
+    }
+
+    const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+    if (sessionError) {
+      console.error("Failed to get session:", sessionError);
+      showAuthOverlay(true);
+      return;
+    }
+
+    updateAuthStateUI(session);
+    if (!session) {
+      showAuthOverlay(true);
+    } else {
+      console.log("Session restored for:", session.user.email);
+    }
+
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+      console.log("Auth state changed:", _event, !!session);
+      updateAuthStateUI(session);
+      if (session) {
+        showAuthOverlay(false);
+      }
+    });
+  } catch (err) {
+    console.error("Startup error:", err);
     showAuthOverlay(true);
   }
-
-  supabaseClient.auth.onAuthStateChange((_event, session) => {
-    updateAuthStateUI(session);
-    if (session) {
-      showAuthOverlay(false);
-    }
-  });
 
   if ("serviceWorker" in navigator) {
     try {
