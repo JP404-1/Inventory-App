@@ -482,7 +482,7 @@ a {
 
 <script>
 const DB_NAME = "inventoryDB";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE_ROOMS = "rooms";
 const STORE_COLLECTIONS = "collections";
 const STORE_ITEMS = "items";
@@ -1591,16 +1591,25 @@ document.getElementById("scanBtn").addEventListener("click", async () => {
   }
 });
 document.getElementById("addItemBtn").addEventListener("click", async () => {
+  if (!currentRoomId) {
+    alert("Select a room first.");
+    return;
+  }
+
   const rooms = await getAllRecords(STORE_ROOMS);
   if (rooms.length === 0) {
     alert("Create a room first.");
     return;
   }
+
   const collections = await getAllRecords(STORE_COLLECTIONS);
   const roomCollection = collections.find(c => c.roomId === currentRoomId);
-  if (roomCollection) {
-    void addItem(roomCollection.id);
+  if (!roomCollection) {
+    alert("No collection found for the selected room. Create a room again.");
+    return;
   }
+
+  void addItem(roomCollection.id);
 });
 document.getElementById("homeBtn").addEventListener("click", () => {
   setView();
