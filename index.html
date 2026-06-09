@@ -2027,37 +2027,29 @@ window.addEventListener("pagehide", cleanupObjectUrls);
     await openDB();
     await render();
 
-    // Check if supabaseClient is properly initialized
+    // Initialize Supabase for optional data sync
     if (!supabaseClient || !supabaseClient.auth) {
-      console.error("Supabase client not initialized");
-      showAuthOverlay(true);
-      return;
-    }
-
-    const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
-    if (sessionError) {
-      console.error("Failed to get session:", sessionError);
-      showAuthOverlay(true);
-      return;
-    }
-
-    updateAuthStateUI(session);
-    if (!session) {
-      showAuthOverlay(true);
+      console.warn("Supabase client not initialized");
     } else {
-      console.log("Session restored for:", session.user.email);
-    }
-
-    supabaseClient.auth.onAuthStateChange((_event, session) => {
-      console.log("Auth state changed:", _event, !!session);
-      updateAuthStateUI(session);
-      if (session) {
-        showAuthOverlay(false);
+      const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+      if (sessionError) {
+        console.warn("Failed to get session:", sessionError);
       }
-    });
+
+      if (session) {
+        console.log("Session restored for:", session.user.email);
+        updateAuthStateUI(session);
+      } else {
+        updateAuthStateUI(null);
+      }
+
+      supabaseClient.auth.onAuthStateChange((_event, session) => {
+        console.log("Auth state changed:", _event, !!session);
+        updateAuthStateUI(session);
+      });
+    }
   } catch (err) {
     console.error("Startup error:", err);
-    showAuthOverlay(true);
   }
 
   if ("serviceWorker" in navigator) {
