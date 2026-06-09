@@ -887,8 +887,17 @@ function buildDashboardView(container, rooms, items, searchTerm) {
   container.appendChild(grid);
 }
 
-function buildRoomView(container, room, items, searchTerm) {
-  const roomItems = getCollectionItems({ id: room.defaultCollectionId }, items)
+function buildRoomView(container, room, collections, items, searchTerm) {
+  const roomCollection = collections.find(c => c.roomId === room.id);
+  if (!roomCollection) {
+    container.appendChild(createElement("div", {
+      className: "empty-state",
+      text: "No items in this room."
+    }));
+    return;
+  }
+
+  const roomItems = getCollectionItems(roomCollection, items)
     .filter(item => itemMatchesSearch(item, searchTerm));
 
   if (roomItems.length === 0) {
@@ -932,7 +941,7 @@ async function render() {
   updateToolbar(room);
 
   if (room) {
-    buildRoomView(container, room, items, searchTerm);
+    buildRoomView(container, room, collections, items, searchTerm);
   } else {
     buildDashboardView(container, rooms, items, searchTerm);
   }
