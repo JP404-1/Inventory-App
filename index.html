@@ -435,7 +435,7 @@ a {
 <header>
   <div>
     <h1>Inventory Manager</h1>
-    <p class="muted">Track collections, items, and receipts by room offline.</p>
+    <p class="muted">Track items and prices by room offline.</p>
   </div>
   <div class="action-row">
     <button id="installBtn" class="secondary" hidden>Install App</button>
@@ -453,10 +453,6 @@ a {
       <div class="summary-value" id="roomCount">0</div>
     </div>
     <div class="panel">
-      <p class="muted">Collections</p>
-      <div class="summary-value" id="collectionCount">0</div>
-    </div>
-    <div class="panel">
       <p class="muted">Items</p>
       <div class="summary-value" id="itemCount">0</div>
     </div>
@@ -470,7 +466,6 @@ a {
     <button id="addItemBtn" class="secondary">Add Item</button>
     <button id="homeBtn" class="secondary" hidden>Home</button>
     <button id="addRoomBtn" class="secondary">Add Room</button>
-    <button id="addCollectionBtn" class="secondary">Add Collection</button>
   </div>
 </section>
 
@@ -753,9 +748,8 @@ function getCollectionItems(collection, items) {
   return items.filter(item => item.collectionId === collection.id);
 }
 
-function getRoomItems(roomCollections, items) {
-  const collectionIds = new Set(roomCollections.map(collection => collection.id));
-  return items.filter(item => collectionIds.has(item.collectionId));
+function getRoomItems(room, items) {
+  return items.filter(item => item.roomId === room.id);
 }
 
 function itemMatchesSearch(item, searchTerm) {
@@ -774,25 +768,6 @@ function itemMatchesSearch(item, searchTerm) {
   return haystack.includes(searchTerm);
 }
 
-function collectionMatchesSearch(collection, collectionItems, searchTerm) {
-  if (!searchTerm) {
-    return true;
-  }
-
-  return collection.name.toLowerCase().includes(searchTerm)
-    || collectionItems.some(item => itemMatchesSearch(item, searchTerm));
-}
-
-function roomMatchesSearch(room, roomCollections, roomItems, searchTerm) {
-  if (!searchTerm) {
-    return true;
-  }
-
-  return room.name.toLowerCase().includes(searchTerm)
-    || roomCollections.some(collection => collection.name.toLowerCase().includes(searchTerm))
-    || roomItems.some(item => itemMatchesSearch(item, searchTerm));
-}
-
 function createStat(text) {
   return createElement("span", { className: "pill", text });
 }
@@ -809,9 +784,9 @@ function makeInteractiveTile(tile, callback) {
   });
 }
 
-function setView(roomId = null, collectionId = null) {
+function setView(roomId = null) {
   currentRoomId = roomId;
-  currentCollectionId = collectionId;
+  currentCollectionId = null;
   document.getElementById("search").value = "";
   void render();
 }
@@ -822,22 +797,12 @@ function createNavButton(text, callback) {
   return button;
 }
 
-function updateViewHeader(room, collection) {
+function updateViewHeader(room) {
   const eyebrow = document.getElementById("viewEyebrow");
   const title = document.getElementById("viewTitle");
   const nav = document.getElementById("viewNav");
 
   nav.innerHTML = "";
-
-  if (collection && room) {
-    eyebrow.textContent = `${room.name} / Collection`;
-    title.textContent = collection.name;
-    nav.append(
-      createNavButton("Rooms", () => setView()),
-      createNavButton(room.name, () => setView(room.id))
-    );
-    return;
-  }
 
   if (room) {
     eyebrow.textContent = "Room";
@@ -850,43 +815,35 @@ function updateViewHeader(room, collection) {
   title.textContent = "Rooms";
 }
 
-function updateToolbar(room, collection) {
+function updateToolbar(room) {
   const search = document.getElementById("search");
   const scanButton = document.getElementById("scanBtn");
   const addItemButton = document.getElementById("addItemBtn");
   const homeButton = document.getElementById("homeBtn");
   const addRoomButton = document.getElementById("addRoomBtn");
-  const addCollectionButton = document.getElementById("addCollectionBtn");
 
-  scanButton.hidden = !collection;
-  addItemButton.hidden = !collection;
-  homeButton.hidden = !room && !collection;
+  scanButton.hidden = !room;
+  addItemButton.hidden = !room;
+  homeButton.hidden = !room;
   addRoomButton.hidden = !!room;
-  addCollectionButton.hidden = !room || !!collection;
 
-  if (collection) {
-    search.placeholder = `Search ${collection.name} items...`;
-  } else if (room) {
-    search.placeholder = `Search ${room.name} collections...`;
+  if (room) {
+    search.placeholder = `Search ${room.name} items...`;
   } else {
-    search.placeholder = "Search rooms, collections, or items...";
+    search.placeholder = "Search rooms or items...";
   }
 }
 
-function buildRoomTile(room, roomCollections, roomItems) {
+function buildRoomTile(room, roomItems) {
   const tile = createElement("article", { className: "tile" });
   const titleBlock = createElement("div");
   const title = createElement("h3", { className: "tile-title", text: room.name });
-  const meta = createElement("p", {
-    className: "muted",
-    text: `${roomCollections.length} ${pluralize(roomCollections.length, "collection")}`
-  });
   const stats = createElement("div", { className: "tile-stats" });
   const actions = createElement("div", { className: "tile-actions" });
   const deleteButton = createElement("button", { className: "danger", text: "Delete" });
 
   makeInteractiveTile(tile, () => setView(room.id));
-  titleBlock.append(title, meta);
+  titleBlock.appendChild(title);
   stats.append(
     createStat(`${roomItems.length} ${pluralize(roomItems.length, "item")}`),
     createStat(`$${formatMoney(sumItemValue(roomItems))}`)
@@ -901,37 +858,17 @@ function buildRoomTile(room, roomCollections, roomItems) {
   return tile;
 }
 
-function buildCollectionTile(collection, collectionItems) {
-  const tile = createElement("article", { className: "tile" });
-  const titleBlock = createElement("div");
-  const title = createElement("h3", { className: "tile-title", text: collection.name });
-  const meta = createElement("p", {
-    className: "muted",
-    text: `${collectionItems.length} ${pluralize(collectionItems.length, "item")}`
-  });
-  const stats = createElement("div", { className: "tile-stats" });
-  const actions = createElement("div", { className: "tile-actions" });
-  const deleteButton = createElement("button", { className: "danger", text: "Delete" });
 
-  makeInteractiveTile(tile, () => setView(collection.roomId, collection.id));
-  titleBlock.append(title, meta);
-  stats.append(createStat(`$${formatMoney(sumItemValue(collectionItems))}`));
-  deleteButton.addEventListener("click", event => {
-    event.stopPropagation();
-    void deleteCollection(collection.id);
-  });
-  actions.appendChild(deleteButton);
 
-  tile.append(titleBlock, stats, actions);
-  return tile;
-}
-
-function buildDashboardView(container, rooms, collections, items, searchTerm) {
+function buildDashboardView(container, rooms, items, searchTerm) {
   const grid = createElement("div", { className: "tile-grid" });
   const visibleRooms = rooms.filter(room => {
-    const roomCollections = collections.filter(collection => collection.roomId === room.id);
-    const roomItems = getRoomItems(roomCollections, items);
-    return roomMatchesSearch(room, roomCollections, roomItems, searchTerm);
+    const roomItems = getRoomItems(room, items);
+    if (!searchTerm) {
+      return true;
+    }
+    return room.name.toLowerCase().includes(searchTerm)
+      || roomItems.some(item => itemMatchesSearch(item, searchTerm));
   });
 
   if (visibleRooms.length === 0) {
@@ -943,42 +880,18 @@ function buildDashboardView(container, rooms, collections, items, searchTerm) {
   }
 
   visibleRooms.forEach(room => {
-    const roomCollections = collections.filter(collection => collection.roomId === room.id);
-    const roomItems = getRoomItems(roomCollections, items);
-    grid.appendChild(buildRoomTile(room, roomCollections, roomItems));
+    const roomItems = getRoomItems(room, items);
+    grid.appendChild(buildRoomTile(room, roomItems));
   });
 
   container.appendChild(grid);
 }
 
-function buildRoomView(container, room, collections, items, searchTerm) {
-  const roomCollections = collections.filter(collection => collection.roomId === room.id);
-  const visibleCollections = roomCollections.filter(collection => {
-    const collectionItems = getCollectionItems(collection, items);
-    return collectionMatchesSearch(collection, collectionItems, searchTerm);
-  });
-  const grid = createElement("div", { className: "tile-grid" });
-
-  if (visibleCollections.length === 0) {
-    container.appendChild(createElement("div", {
-      className: "empty-state",
-      text: searchTerm ? "No collections match the current search." : "No collections yet."
-    }));
-    return;
-  }
-
-  visibleCollections.forEach(collection => {
-    grid.appendChild(buildCollectionTile(collection, getCollectionItems(collection, items)));
-  });
-
-  container.appendChild(grid);
-}
-
-function buildCollectionView(container, collection, items, searchTerm) {
-  const collectionItems = getCollectionItems(collection, items)
+function buildRoomView(container, room, items, searchTerm) {
+  const roomItems = getCollectionItems({ id: room.defaultCollectionId }, items)
     .filter(item => itemMatchesSearch(item, searchTerm));
 
-  if (collectionItems.length === 0) {
+  if (roomItems.length === 0) {
     container.appendChild(createElement("div", {
       className: "empty-state",
       text: searchTerm ? "No items match the current search." : "No items yet."
@@ -986,10 +899,11 @@ function buildCollectionView(container, collection, items, searchTerm) {
     return;
   }
 
-  collectionItems.forEach(item => {
+  roomItems.forEach(item => {
     container.appendChild(buildItemCard(item));
   });
 }
+
 
 async function render() {
   cleanupObjectUrls();
@@ -1003,40 +917,24 @@ async function render() {
   const container = document.getElementById("collections");
   const searchTerm = document.getElementById("search").value.trim().toLowerCase();
   let room = currentRoomId ? rooms.find(entry => entry.id === currentRoomId) : null;
-  let collection = currentCollectionId ? collections.find(entry => entry.id === currentCollectionId) : null;
 
   if (currentRoomId && !room) {
     currentRoomId = null;
-    currentCollectionId = null;
     room = null;
-    collection = null;
-  }
-
-  if (collection && (!room || collection.roomId !== room.id)) {
-    room = rooms.find(entry => entry.id === collection.roomId) || null;
-    currentRoomId = room ? room.id : null;
-  }
-
-  if (currentCollectionId && (!collection || !room)) {
-    currentCollectionId = null;
-    collection = null;
   }
 
   container.innerHTML = "";
   document.getElementById("totalValue").textContent = formatMoney(sumItemValue(items));
   document.getElementById("roomCount").textContent = rooms.length;
-  document.getElementById("collectionCount").textContent = collections.length;
   document.getElementById("itemCount").textContent = items.length;
 
-  updateViewHeader(room, collection);
-  updateToolbar(room, collection);
+  updateViewHeader(room);
+  updateToolbar(room);
 
-  if (collection) {
-    buildCollectionView(container, collection, items, searchTerm);
-  } else if (room) {
-    buildRoomView(container, room, collections, items, searchTerm);
+  if (room) {
+    buildRoomView(container, room, items, searchTerm);
   } else {
-    buildDashboardView(container, rooms, collections, items, searchTerm);
+    buildDashboardView(container, rooms, items, searchTerm);
   }
 }
 
@@ -1063,7 +961,9 @@ async function addRoom() {
   }
 
   try {
-    await addRecord(STORE_ROOMS, { name: trimmed, created: Date.now() });
+    const roomId = await addRecord(STORE_ROOMS, { name: trimmed, created: Date.now() });
+    // Auto-create default collection for this room
+    await addRecord(STORE_COLLECTIONS, { name: `${trimmed} Items`, roomId, created: Date.now() });
     await render();
   } catch (err) {
     console.error("Failed to add room:", err);
@@ -1071,60 +971,6 @@ async function addRoom() {
   }
 }
 
-async function chooseRoomId() {
-  const rooms = await getAllRecords(STORE_ROOMS);
-  if (rooms.length === 0) {
-    alert("Create a room first.");
-    return null;
-  }
-
-  if (rooms.length === 1) {
-    return rooms[0].id;
-  }
-
-  const promptText = rooms.map((room, index) => `${index + 1}. ${room.name}`).join("\n");
-  const selection = prompt(`Choose a room for this collection:\n${promptText}`);
-  if (selection === null) {
-    return null;
-  }
-
-  const trimmed = selection.trim();
-  const numeric = Number(trimmed);
-  if (Number.isFinite(numeric) && numeric >= 1 && numeric <= rooms.length) {
-    return rooms[numeric - 1].id;
-  }
-
-  const matchedRoom = rooms.find(room => room.name.toLowerCase() === trimmed.toLowerCase());
-  if (matchedRoom) {
-    return matchedRoom.id;
-  }
-
-  alert("Could not match the selected room.");
-  return null;
-}
-
-async function addCollection(roomId) {
-  if (!roomId) {
-    roomId = await chooseRoomId();
-    if (roomId === null) {
-      return;
-    }
-  }
-
-  const name = prompt("Collection name?");
-  if (name === null) {
-    return;
-  }
-
-  const trimmed = name.trim();
-  if (!trimmed) {
-    alert("Collection name cannot be empty.");
-    return;
-  }
-
-  await addRecord(STORE_COLLECTIONS, { name: trimmed, roomId, created: Date.now() });
-  await render();
-}
 
 async function addItem(collectionId) {
   if (isAddingItem) {
@@ -1154,6 +1000,11 @@ async function addItem(collectionId) {
       return;
     }
 
+    // Get room ID for this collection
+    const collections = await getAllRecords(STORE_COLLECTIONS);
+    const collection = collections.find(c => c.id === collectionId);
+    const roomId = collection ? collection.roomId : null;
+
     try {
       await addRecord(STORE_ITEMS, {
         name: trimmedName,
@@ -1168,7 +1019,8 @@ async function addItem(collectionId) {
         estimatedPrice: null,
         currentPrice: purchaseInput.value,
         updated: Date.now(),
-        collectionId
+        collectionId,
+        roomId
       });
     } catch (err) {
       console.error("Failed to add item:", err);
@@ -1198,6 +1050,11 @@ async function addScannedItem(collectionId) {
 
     const details = await fetchBarcodeDetails(barcode);
 
+    // Get room ID for this collection
+    const collections = await getAllRecords(STORE_COLLECTIONS);
+    const collection = collections.find(c => c.id === collectionId);
+    const roomId = collection ? collection.roomId : null;
+
     try {
       await addRecord(STORE_ITEMS, {
         name: details.name,
@@ -1212,7 +1069,8 @@ async function addScannedItem(collectionId) {
         estimatedPrice: details.price,
         currentPrice: details.price,
         updated: Date.now(),
-        collectionId
+        collectionId,
+        roomId
       });
     } catch (err) {
       console.error("Failed to add scanned item:", err);
@@ -1435,28 +1293,9 @@ async function manualBarcodeEntry(message) {
   return trimmed;
 }
 
-async function deleteCollection(id) {
-  const confirmed = confirm("Delete this collection and all its items?");
-  if (!confirmed) {
-    return;
-  }
-
-  const items = await getAllRecords(STORE_ITEMS);
-  const collectionItems = items.filter(item => item.collectionId === id);
-
-  for (const item of collectionItems) {
-    await deleteRecord(STORE_ITEMS, item.id);
-  }
-
-  await deleteRecord(STORE_COLLECTIONS, id);
-  if (currentCollectionId === id) {
-    currentCollectionId = null;
-  }
-  await render();
-}
 
 async function deleteRoom(id) {
-  const confirmed = confirm("Delete this room and everything inside it?");
+  const confirmed = confirm("Delete this room and all its items?");
   if (!confirmed) {
     return;
   }
@@ -1476,49 +1315,47 @@ async function deleteRoom(id) {
   await deleteRecord(STORE_ROOMS, id);
   if (currentRoomId === id) {
     currentRoomId = null;
-    currentCollectionId = null;
   }
   await render();
 }
 
 async function chooseCollectionId() {
-  const collections = await getAllRecords(STORE_COLLECTIONS);
-  if (collections.length === 0) {
-    alert("Create a collection first.");
+  const rooms = await getAllRecords(STORE_ROOMS);
+  if (rooms.length === 0) {
+    alert("Create a room first.");
     return null;
   }
 
-  if (collections.length === 1) {
-    return collections[0].id;
+  if (rooms.length === 1) {
+    const collections = await getAllRecords(STORE_COLLECTIONS);
+    const collection = collections.find(c => c.roomId === rooms[0].id);
+    return collection ? collection.id : null;
   }
 
-  const rooms = await getAllRecords(STORE_ROOMS);
-  const roomById = new Map(rooms.map(room => [room.id, room.name]));
-  const promptText = collections
-    .map((collection, index) => {
-      const roomName = roomById.get(collection.roomId) || "Unknown room";
-      return `${index + 1}. ${collection.name} (${roomName})`;
-    })
-    .join("\n");
-
-  const selection = prompt(`Choose a collection for this item:\n${promptText}`);
+  const promptText = rooms.map((room, index) => `${index + 1}. ${room.name}`).join("\n");
+  const selection = prompt(`Choose a room for this item:\n${promptText}`);
   if (selection === null) {
     return null;
   }
 
   const trimmed = selection.trim();
   const numeric = Number(trimmed);
-  if (Number.isFinite(numeric) && numeric >= 1 && numeric <= collections.length) {
-    return collections[numeric - 1].id;
+  let selectedRoom = null;
+  
+  if (Number.isFinite(numeric) && numeric >= 1 && numeric <= rooms.length) {
+    selectedRoom = rooms[numeric - 1];
+  } else {
+    selectedRoom = rooms.find(room => room.name.toLowerCase() === trimmed.toLowerCase());
   }
 
-  const matchedCollection = collections.find(collection => collection.name.toLowerCase() === trimmed.toLowerCase());
-  if (matchedCollection) {
-    return matchedCollection.id;
+  if (!selectedRoom) {
+    alert("Could not match the selected room.");
+    return null;
   }
 
-  alert("Could not match the selected collection.");
-  return null;
+  const collections = await getAllRecords(STORE_COLLECTIONS);
+  const collection = collections.find(c => c.roomId === selectedRoom.id);
+  return collection ? collection.id : null;
 }
 console.log("ZXingBrowser =", window.ZXingBrowser);
 console.log("mediaDevices =", navigator.mediaDevices);
@@ -1732,22 +1569,28 @@ document.getElementById("search").addEventListener("input", () => {
 document.getElementById("addRoomBtn").addEventListener("click", () => {
   void addRoom();
 });
-document.getElementById("addCollectionBtn").addEventListener("click", async () => {
-  const roomId = currentRoomId || await chooseRoomId();
-  if (roomId !== null) {
-    void addCollection(roomId);
-  }
-});
 document.getElementById("scanBtn").addEventListener("click", async () => {
-  const collectionId = currentCollectionId || await chooseCollectionId();
-  if (collectionId !== null) {
-    void addScannedItem(collectionId);
+  const rooms = await getAllRecords(STORE_ROOMS);
+  if (rooms.length === 0) {
+    alert("Create a room first.");
+    return;
+  }
+  const collections = await getAllRecords(STORE_COLLECTIONS);
+  const roomCollection = collections.find(c => c.roomId === currentRoomId);
+  if (roomCollection) {
+    void addScannedItem(roomCollection.id);
   }
 });
 document.getElementById("addItemBtn").addEventListener("click", async () => {
-  const collectionId = currentCollectionId || await chooseCollectionId();
-  if (collectionId !== null) {
-    void addItem(collectionId);
+  const rooms = await getAllRecords(STORE_ROOMS);
+  if (rooms.length === 0) {
+    alert("Create a room first.");
+    return;
+  }
+  const collections = await getAllRecords(STORE_COLLECTIONS);
+  const roomCollection = collections.find(c => c.roomId === currentRoomId);
+  if (roomCollection) {
+    void addItem(roomCollection.id);
   }
 });
 document.getElementById("homeBtn").addEventListener("click", () => {
