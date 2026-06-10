@@ -498,6 +498,39 @@ setSupabaseClient(supabaseClient);
 let session = getSession();
 onAuthStateChange(s => { session = s; setAuthUI(!!session && !!session.user); });
 
+// Debug: magic-link callback visibility (also helps when auth appears to "do nothing").
+try {
+  const params = new URLSearchParams(window.location.search);
+  console.log('[auth-debug] location.href =', window.location.href);
+  console.log('[auth-debug] search params =', Object.fromEntries(params.entries()));
+  const debug = document.createElement('pre');
+  debug.style.cssText = 'position:fixed;left:12px;bottom:12px;max-width:520px;max-height:38vh;overflow:auto;z-index:99999;background:rgba(0,0,0,.6);border:1px solid rgba(63,182,139,.35);padding:10px;border-radius:10px;color:#dff6ea;font-size:12px;';
+  const s = getSession();
+  debug.textContent = [
+    'Supabase auth-debug',
+    'href: ' + window.location.href,
+    'params: ' + JSON.stringify(Object.fromEntries(params.entries())),
+    'session user: ' + (s?.user?.email || '(none)'),
+    'session expires_at: ' + (s?.expires_at || '(none)'),
+  ].join('\n');
+  document.body.appendChild(debug);
+}
+catch (e) {
+  console.warn('[auth-debug] failed to render debug panel', e);
+}
+
+// Safety re-check after initAuth (detectSessionInUrl sometimes needs a tick).
+try {
+  const { data } = await supabaseClient.auth.getSession();
+  session = data.session || null;
+  setAuthUI(!!session && !!session.user);
+  console.log('[auth-debug] getSession after initAuth =>', { user: session?.user?.email, hasSession: !!session });
+}
+catch (e) {
+  console.warn('[auth-debug] getSession after initAuth failed', e);
+}
+
+
 const DB_NAME = "inventoryDB";
 const DB_VERSION = 4;
 const STORE_ROOMS = "rooms";

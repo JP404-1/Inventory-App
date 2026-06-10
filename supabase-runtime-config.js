@@ -7,5 +7,8 @@ window.SUPABASE_URL = window.SUPABASE_URL || 'https://noiwkbfsgyqicxaoatfx.supab
 window.SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'sb_publishable_T_ad2hGo4-lZZBcFchUMyw_MuQN3TRV';
 
 // Optional: expose redirect URL used for magic link.
-window.SUPABASE_EMAIL_REDIRECT_TO = window.SUPABASE_EMAIL_REDIRECT_TO || 'https://jp404-1.github.io/Inventory-App/';
+// IMPORTANT: this must match your real deployed origin and what Supabase allows.
+// Default to the current origin so magic-link callbacks work in local/dev builds.
+window.SUPABASE_EMAIL_REDIRECT_TO = window.SUPABASE_EMAIL_REDIRECT_TO || window.location.origin;
+
 

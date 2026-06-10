@@ -1,22 +1,15 @@
-# TODO - Supabase + Magic Link + Offline-Backup (Option A)
+# TODO - Magic link fix (Supabase + PWA)
 
 ## Plan
-- Use **IndexedDB as source of truth** (offline-first).
-- Add **Supabase magic-link auth** to get `auth.uid()` for per-user access.
-- Use Supabase Storage (private buckets `item-photos` + `receipts`) authenticated by the logged-in user.
-- Implement **sync-on-reconnect**:
-  - When online and auth/session exists, upload any locally-stored Blobs to Supabase Storage.
-  - After upload success, store returned URLs/paths in IndexedDB metadata fields (and optionally later mirror to Supabase tables if you provide schema).
+- Diagnose why magic link doesn’t change auth/session state.
+- Add debug output to confirm whether Supabase URL params are present and whether Supabase auth parsing runs.
+- Ensure `emailRedirectTo` matches the actual origin where the app is hosted.
+- Add safety refresh of session after page load.
 
-## Steps (track progress)
-1. Fix `supabase-storage.js` fully (auth-aware, two buckets, private download).
-2. Add Supabase CDN + magic-link auth bootstrap in `index.html`.
-3. Add UI state gating (disable uploads/edits while logged out).
-4. Refactor item file handling:
-   - When online+authed: upload photo/receipt Blobs to the right bucket.
-   - Save returned metadata in IndexedDB and render via Blob while offline.
-5. Add a minimal outbox/sync tracker in IndexedDB (e.g., `uploadStatus` + `updatedAt`).
-6. Implement sync-on-reconnect.
-7. Test flow: magic link login -> add item with photo/receipt -> reload -> ensure storage fetches work.
-
+## Steps
+1. Patch `index.html` to show current URL params and auth/session state in a visible debug panel, plus console logs.
+2. Patch `index.html` to re-check `supabaseClient.auth.getSession()` after initAuth and after DOM loaded.
+3. Update magic link `emailRedirectTo` logic to default to current `window.location.origin` (not GitHub pages).
+4. Clear/disable service worker cache during debugging.
+5. Re-test magic link end-to-end.
 
