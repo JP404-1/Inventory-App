@@ -489,7 +489,8 @@ a {
 </main>
 
 <script type="module">
-import { initAuth, getSession, sendMagicLink, signOut, onAuthStateChange, supabaseClient } from './supabase-auth.js';
+import { initAuth, getSession, sendMagicLink, signOut, onAuthStateChange } from './supabase-auth.js';
+import { supabaseClient } from './supabase-client.js';
 
 import { storage, setSupabaseClient } from './supabase-storage.js';
 
