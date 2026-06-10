@@ -492,11 +492,40 @@ a {
 import { initAuth, getSession, sendMagicLink, signOut, onAuthStateChange, supabaseClient } from './supabase-auth.js';
 import { storage, setSupabaseClient } from './supabase-storage.js';
 
+function showFatalError(message) {
+  const el = document.createElement('div');
+  el.className = 'access-denied';
+  el.innerHTML = `
+    <div style="max-width:720px;">
+      <h2 style="margin-bottom:0.75rem;">App failed to start</h2>
+      <p style="color:var(--muted); margin-bottom:1rem;">${message}</p>
+      <p style="color:var(--muted); font-size:12px;">(You can still use the browser console to troubleshoot.)</p>
+      <button style="margin-top:1rem;" onclick="location.reload()">Reload</button>
+    </div>
+  `;
+  document.body.appendChild(el);
+}
+
+
 // Initialize auth + bind storage to authenticated client.
-await initAuth();
-setSupabaseClient(supabaseClient);
-let session = getSession();
-onAuthStateChange(s => { session = s; setAuthUI(!!session && !!session.user); });
+let session = null;
+try {
+  // If Supabase config is missing, supabaseClient may be null.
+  if (supabaseClient) {
+    setSupabaseClient(supabaseClient);
+    await initAuth();
+    session = getSession();
+    onAuthStateChange(s => { session = s; setAuthUI(!!session && !!session.user); });
+  } else {
+    // Still allow offline IndexedDB rendering.
+    console.warn('[startup] Supabase client is not initialized; running offline-only mode.');
+  }
+} catch (e) {
+  console.error('[startup] Supabase/auth init failed:', e);
+  // Continue app init offline; storage operations will fail later but render should work.
+}
+
+
 
 // Debug: magic-link callback visibility (also helps when auth appears to "do nothing").
 try {

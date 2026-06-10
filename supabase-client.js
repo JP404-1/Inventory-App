@@ -6,15 +6,22 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const SUPABASE_URL = window.SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  throw new Error('Missing SUPABASE_URL or SUPABASE_ANON_KEY globals.');
+// IMPORTANT: this app must still render offline if Supabase config is missing.
+// So we do NOT throw during module load.
+const hasConfig = !!SUPABASE_URL && !!SUPABASE_ANON_KEY;
+
+export const supabaseClient = hasConfig
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    })
+  : null;
+
+export function getSupabaseClient() {
+  return supabaseClient;
 }
 
-export const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
-});
 
