@@ -554,14 +554,16 @@ catch (e) {
 
 // Safety re-check after initAuth (detectSessionInUrl sometimes needs a tick).
 try {
-  const { data } = await supabaseClient.auth.getSession();
-  session = data.session || null;
-  setAuthUI(!!session && !!session.user);
-  console.log('[auth-debug] getSession after initAuth =>', { user: session?.user?.email, hasSession: !!session });
-}
-catch (e) {
+  if (supabaseClient) {
+    const { data } = await supabaseClient.auth.getSession();
+    session = data.session || null;
+    setAuthUI(!!session && !!session.user);
+    console.log('[auth-debug] getSession after initAuth =>', { user: session?.user?.email, hasSession: !!session });
+  }
+} catch (e) {
   console.warn('[auth-debug] getSession after initAuth failed', e);
 }
+
 
 
 const DB_NAME = "inventoryDB";
