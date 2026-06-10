@@ -439,8 +439,16 @@ a {
   </div>
   <div class="action-row">
     <button id="installBtn" class="secondary" hidden>Install App</button>
+    <div id="authControls" class="action-row" style="gap:0.5rem; margin-left:0.75rem;">
+      <input id="magicEmail" type="email" placeholder="Email for magic link" style="width: 260px;" />
+      <button id="sendMagicLinkBtn" class="secondary">Send Link</button>
+      <button id="signOutBtn" class="secondary" hidden>Sign out</button>
+    </div>
   </div>
 </header>
+
+<!-- Supabase runtime config for plain static hosting -->
+<script src="./supabase-runtime-config.js"></script>
 
 <main class="app-shell">
   <section class="summary">
@@ -480,7 +488,16 @@ a {
   <section id="collections" class="content" aria-live="polite"></section>
 </main>
 
-<script>
+<script type="module">
+import { initAuth, getSession, sendMagicLink, signOut, onAuthStateChange, supabaseClient } from './supabase-auth.js';
+import { storage, setSupabaseClient } from './supabase-storage.js';
+
+// Initialize auth + bind storage to authenticated client.
+await initAuth();
+setSupabaseClient(supabaseClient);
+let session = getSession();
+onAuthStateChange(s => { session = s; setAuthUI(!!session && !!session.user); });
+
 const DB_NAME = "inventoryDB";
 const DB_VERSION = 4;
 const STORE_ROOMS = "rooms";
@@ -709,23 +726,68 @@ function buildItemCard(item) {
   }
   details.append(priceLine, updated);
 
+  const isAuthed = !!(session && session.user);
+
+  // Photo rendering: Blob offline fallback; otherwise download from private storage if we have a path.
   if (item.image instanceof Blob) {
     const image = createElement("img", { className: "thumb" });
     image.alt = `${item.name} photo`;
     image.src = trackedObjectUrl(item.image);
     media.appendChild(image);
+  } else if (item.imagePath && isAuthed) {
+    // Async render of private content.
+    const placeholder = createElement("div", { className: "thumb" });
+    placeholder.style.display = 'grid';
+    placeholder.style.placeItems = 'center';
+    placeholder.textContent = 'Loading...';
+    media.appendChild(placeholder);
+
+    void (async () => {
+      try {
+        const dl = await storage.downloadFile(item.imagePath, 'image');
+        if (!dl.success) return;
+        const blob = dl.data;
+        const img = createElement('img', { className: 'thumb' });
+        img.alt = `${item.name} photo`;
+        img.src = trackedObjectUrl(blob);
+        placeholder.replaceWith(img);
+      } catch (e) {
+        console.warn('Failed to render photo from storage', e);
+        placeholder.textContent = 'Photo unavailable';
+      }
+    })();
   } else if (item.imageUrl) {
+    // Scanned product image from UPC API (public URL string).
     const image = createElement("img", { className: "thumb" });
     image.alt = `${item.name} product image`;
     image.src = item.imageUrl;
     media.appendChild(image);
   }
 
+  // Receipt rendering.
   if (item.receipt instanceof Blob) {
     const receipt = createElement("a", { text: "Open receipt" });
     receipt.href = trackedObjectUrl(item.receipt);
     receipt.target = "_blank";
     receipt.rel = "noopener noreferrer";
+    media.appendChild(receipt);
+  } else if (item.receiptPath && isAuthed) {
+    const receipt = createElement("a", { text: "Open receipt" });
+    receipt.href = '#';
+    receipt.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        const dl = await storage.downloadFile(item.receiptPath, 'receipt');
+        if (!dl.success) return;
+        const blob = dl.data;
+        const url = trackedObjectUrl(blob);
+        receipt.href = url;
+        window.open(url, '_blank');
+      } catch (err) {
+        console.warn('Failed to render receipt from storage', err);
+        alert('Could not open receipt.');
+      }
+    });
     media.appendChild(receipt);
   }
 
@@ -1108,6 +1170,24 @@ async function deleteItem(id) {
     return;
   }
 
+  const item = await getRecord(STORE_ITEMS, id);
+  if (item) {
+    // Best-effort delete from private storage when possible.
+    const isAuthed = !!(session && session.user);
+    if (isAuthed) {
+      try {
+        if (item.imagePath) await storage.deleteFile(item.imagePath, 'image');
+      } catch (e) {
+        console.warn('Failed to delete photo', e);
+      }
+      try {
+        if (item.receiptPath) await storage.deleteFile(item.receiptPath, 'receipt');
+      } catch (e) {
+        console.warn('Failed to delete receipt', e);
+      }
+    }
+  }
+
   await deleteRecord(STORE_ITEMS, id);
   await render();
 }
@@ -1136,18 +1216,34 @@ async function overridePrice(id) {
 
 async function updateItemFile(id, field, type) {
   const file = await pickFile(type);
-  if (!file) {
-    return;
-  }
+  if (!file) return;
 
   const item = await getRecord(STORE_ITEMS, id);
-  if (!item) {
-    return;
+  if (!item) return;
+
+  // Offline backup: always keep the Blob in IndexedDB.
+  item[field] = file;
+
+  // Online path metadata: if logged in, also upload to Supabase and persist storage path.
+  const isAuthed = !!(session && session.user);
+  const userId = session?.user?.id;
+  const bucketType = field === 'image' ? 'image' : 'receipt';
+  const storagePath = `${userId}/${crypto.randomUUID()}${field === 'image' ? '.jpg' : '.pdf'}`;
+
+  if (isAuthed) {
+    try {
+      const upload = await storage.uploadFile(file, storagePath, bucketType);
+      if (upload?.success && upload.source === 'supabase') {
+        // Save metadata so we can re-render from Supabase later.
+        if (field === 'image') item.imagePath = storagePath;
+        if (field === 'receipt') item.receiptPath = storagePath;
+      }
+    } catch (e) {
+      console.warn('Upload failed; keeping offline backup only.', e);
+    }
   }
 
-  item[field] = file;
   item.updated = Date.now();
-
   try {
     await putRecord(STORE_ITEMS, item);
     await render();
@@ -1616,7 +1712,70 @@ document.getElementById("homeBtn").addEventListener("click", () => {
 });
 window.addEventListener("pagehide", cleanupObjectUrls);
 
+function setAuthUI(isAuthed) {
+  const sendBtn = document.getElementById('sendMagicLinkBtn');
+  const signOutBtn = document.getElementById('signOutBtn');
+  const emailInput = document.getElementById('magicEmail');
+  // Disable send when signed in.
+  if (isAuthed) {
+    if (sendBtn) sendBtn.hidden = true;
+    if (emailInput) emailInput.hidden = true;
+    if (signOutBtn) signOutBtn.hidden = false;
+  } else {
+    if (sendBtn) sendBtn.hidden = false;
+    if (emailInput) emailInput.hidden = false;
+    if (signOutBtn) signOutBtn.hidden = true;
+  }
+}
+
+function wireAuthUI() {
+  const sendBtn = document.getElementById('sendMagicLinkBtn');
+  const signOutBtn = document.getElementById('signOutBtn');
+  const emailInput = document.getElementById('magicEmail');
+
+  if (sendBtn) {
+    sendBtn.addEventListener('click', async () => {
+      const email = (emailInput.value || '').trim();
+      if (!email) {
+        alert('Enter an email address first.');
+        return;
+      }
+      try {
+        await sendMagicLink(email);
+        alert('Magic link sent. Check your email.');
+      } catch (e) {
+        console.error('sendMagicLink failed', e);
+        alert('Could not send magic link. Check console for details.');
+      }
+    });
+  }
+
+  if (signOutBtn) {
+    signOutBtn.addEventListener('click', async () => {
+      try {
+        await signOut();
+        location.reload();
+      } catch (e) {
+        console.error('signOut failed', e);
+      }
+    });
+  }
+}
+
 (async () => {
+  wireAuthUI();
+  setAuthUI(!!session && !!session.user);
+  if (session) {
+    // Basic: show signed-in state.
+    setAuthUI(true);
+  } else {
+    setAuthUI(false);
+  }
+  if (!document.body.dataset.authMounted) {
+    document.body.dataset.authMounted = 'true';
+    // Basic gating: when logged out, disable edits but still allow offline read.
+    // Full auth UI is added below.
+  }
   await openDB();
   await render();
 

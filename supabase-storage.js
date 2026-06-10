@@ -1,23 +1,39 @@
-// Supabase Storage Initialization with localStorage Fallback
-import { createClient } from '@supabase/supabase-js';
+// Supabase Storage helper for plain static apps.
+// NOTE: Your bucket(s) are PRIVATE, so callers must use an authenticated Supabase client.
+// This module expects a globally available Supabase instance via setSupabaseClient().
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'YOUR_SUPABASE_URL';
-const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'YOUR_SUPABASE_KEY';
+import { STORAGE_BUCKET_PHOTOS, STORAGE_BUCKET_RECEIPTS } from './supabase-config.js';
 
-// Initialize Supabase
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+let supabase = null;
 
 // Storage configuration
 const STORAGE_CONFIG = {
-  bucket: 'inventory-items',
   localStorageKey: 'inventoryFiles',
-  maxLocalStorageSize: 5 * 1024 * 1024, // 5MB
+  maxLocalStorageSize: 5 * 1024 * 1024, // 5MB (small offline fallback only)
 };
+
+export function setSupabaseClient(client) {
+  supabase = client;
+}
+
+function assertSupabase() {
+  if (!supabase) throw new Error('Supabase client not initialized. Call setSupabaseClient() first.');
+}
+
+function getBucket(type) {
+  if (type === 'image') return STORAGE_BUCKET_PHOTOS;
+  if (type === 'receipt') return STORAGE_BUCKET_RECEIPTS;
+  throw new Error(`Unknown file type: ${type}`);
+}
 
 class HybridStorage {
   constructor() {
-    this.supabase = supabase;
     this.localCache = this.loadLocalCache();
+  }
+
+  get client() {
+    assertSupabase();
+    return supabase;
   }
 
   // Load cache from localStorage
@@ -48,11 +64,11 @@ class HybridStorage {
   }
 
   // Upload file to Supabase with localStorage fallback
-  async uploadFile(file, path) {
+  async uploadFile(file, path, type) {
     try {
       // Try Supabase first
-      const { data, error } = await this.supabase.storage
-        .from(STORAGE_CONFIG.bucket)
+      const { data, error } = await this.client.storage
+        .from(getBucket(type))
         .upload(path, file, {
           cacheControl: '3600',
           upsert: true,
@@ -99,10 +115,10 @@ class HybridStorage {
   }
 
   // Download file from Supabase with localStorage fallback
-  async downloadFile(path) {
+  async downloadFile(path, type) {
     try {
-      const { data, error } = await this.supabase.storage
-        .from(STORAGE_CONFIG.bucket)
+      const { data, error } = await this.client.storage
+        .from(getBucket(type))
         .download(path);
 
       if (error) throw error;
@@ -129,11 +145,11 @@ class HybridStorage {
   }
 
   // Delete file
-  async deleteFile(path) {
+  async deleteFile(path, type) {
     try {
       // Try Supabase first
-      const { error } = await this.supabase.storage
-        .from(STORAGE_CONFIG.bucket)
+      const { error } = await this.client.storage
+        .from(getBucket(type))
         .remove([path]);
 
       if (error) throw error;
@@ -151,10 +167,10 @@ class HybridStorage {
   }
 
   // List files from Supabase
-  async listFiles() {
+  async listFiles(type) {
     try {
-      const { data, error } = await this.supabase.storage
-        .from(STORAGE_CONFIG.bucket)
+      const { data, error } = await this.client.storage
+        .from(getBucket(type))
         .list();
 
       if (error) throw error;
@@ -171,18 +187,10 @@ class HybridStorage {
     }
   }
 
-  // Get file URL (Supabase public URL)
-  async getPublicUrl(path) {
-    try {
-      const { data } = this.supabase.storage
-        .from(STORAGE_CONFIG.bucket)
-        .getPublicUrl(path);
-
-      return { success: true, url: data.publicUrl };
-    } catch (e) {
-      console.error('Failed to get public URL:', e);
-      return { success: false, error: e.message };
-    }
+  // Get file URL for private buckets is NOT recommended.
+  // Keep this method stubbed to avoid accidental public URL usage.
+  async getPublicUrl() {
+    return { success: false, error: 'Bucket is PRIVATE; use authenticated downloadFile(path, type) instead.' };
   }
 
   // Clear localStorage cache
