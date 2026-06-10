@@ -523,7 +523,9 @@ try {
 } catch (e) {
   console.error('[startup] Supabase/auth init failed:', e);
   // Continue app init offline; storage operations will fail later but render should work.
+  setAuthUI(false);
 }
+
 
 
 

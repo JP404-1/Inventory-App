@@ -1,4 +1,7 @@
 // Magic link auth helper for plain static apps.
+//
+// IMPORTANT: supabaseClient may be null when Supabase config is missing.
+// All exported functions will throw if called without a valid client.
 
 import { supabaseClient } from './supabase-client.js';
 
@@ -16,7 +19,15 @@ function notify(session) {
   }
 }
 
+function assertSupabaseClient() {
+  if (!supabaseClient) {
+    throw new Error('Supabase client not initialized (missing SUPABASE_URL / SUPABASE_ANON_KEY).');
+  }
+}
+
 export async function initAuth() {
+  assertSupabaseClient();
+
   const { data } = await supabaseClient.auth.getSession();
   currentSession = data.session || null;
   notify(currentSession);
@@ -45,11 +56,15 @@ export function onAuthStateChange(cb) {
 }
 
 export async function signOut() {
+  assertSupabaseClient();
+
   const { error } = await supabaseClient.auth.signOut();
   if (error) throw error;
 }
 
 export async function sendMagicLink(email) {
+  assertSupabaseClient();
+
   const emailRedirectTo = window.SUPABASE_EMAIL_REDIRECT_TO || window.location.origin;
 
   const { data, error } = await supabaseClient.auth.signInWithOtp({
@@ -63,5 +78,5 @@ export async function sendMagicLink(email) {
   return data;
 }
 
-export { supabaseClient as supabase }; 
+export { supabaseClient as supabase };
 
