@@ -62,16 +62,24 @@ export async function signOut() {
   if (error) throw error;
 }
 
-export async function sendMagicLink(email) {
+export async function signInWithPassword(email, password) {
   assertSupabaseClient();
 
-  const emailRedirectTo = window.SUPABASE_EMAIL_REDIRECT_TO || window.location.origin;
-
-  const { data, error } = await supabaseClient.auth.signInWithOtp({
+  const { data, error } = await supabaseClient.auth.signInWithPassword({
     email,
-    options: {
-      emailRedirectTo,
-    },
+    password,
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+export async function signUpWithPassword(email, password) {
+  assertSupabaseClient();
+
+  const { data, error } = await supabaseClient.auth.signUp({
+    email,
+    password,
   });
 
   if (error) throw error;

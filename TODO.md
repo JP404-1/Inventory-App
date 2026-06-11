@@ -1,12 +1,11 @@
 # TODO
 
-## Plan
-- Add ability for users to change an item’s name (especially after barcode scan).
-- Keep current IndexedDB storage behavior.
+## Auth updates: remove magic link, add email/password login + signup
+- [x] Inspect current auth implementation and identify magic link usage.
+- [x] Update `supabase-auth.js` to remove `sendMagicLink` and add `signInWithPassword` + `signUpWithPassword`.
+- [x] Update `index.html` UI/logic: replace magic link fields/buttons with email+password login + signup controls.
+- [x] Implement behavior: try login first; if email not recognized, switch UI to signup mode (or show signup option) and allow user to create account.
+- [ ] Verify sign-out still works and authenticated uploads/deletes still gate by `session.user`.
+- [ ] Manual test: existing user login; unknown email signup; persistence after refresh.
 
-## Steps
-1. Update `buildItemCard()` to add a "Change Name" action button.
-2. Implement `updateItemName(id)` to prompt for a non-empty name and persist it via `putRecord(STORE_ITEMS, item)`.
-3. Update UI by re-rendering after the name change.
-4. Verify scanned items can have their name edited and the change persists after refresh.
 
