@@ -1,15 +1,12 @@
-# TODO - Magic link fix (Supabase + PWA)
+# TODO
 
 ## Plan
-- Diagnose why magic link doesn’t change auth/session state.
-- Add debug output to confirm whether Supabase URL params are present and whether Supabase auth parsing runs.
-- Ensure `emailRedirectTo` matches the actual origin where the app is hosted.
-- Add safety refresh of session after page load.
+- Add ability for users to change an item’s name (especially after barcode scan).
+- Keep current IndexedDB storage behavior.
 
 ## Steps
-1. Patch `index.html` to show current URL params and auth/session state in a visible debug panel, plus console logs.
-2. Patch `index.html` to re-check `supabaseClient.auth.getSession()` after initAuth and after DOM loaded.
-3. Update magic link `emailRedirectTo` logic to default to current `window.location.origin` (not GitHub pages).
-4. Clear/disable service worker cache during debugging.
-5. Re-test magic link end-to-end.
+1. Update `buildItemCard()` to add a "Change Name" action button.
+2. Implement `updateItemName(id)` to prompt for a non-empty name and persist it via `putRecord(STORE_ITEMS, item)`.
+3. Update UI by re-rendering after the name change.
+4. Verify scanned items can have their name edited and the change persists after refresh.
 

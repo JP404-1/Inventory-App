@@ -195,7 +195,7 @@ input {
   transition: border-color 120ms ease, transform 120ms ease, background 120ms ease;
 }
 
-.tile[role="button"] {
+a.tile[role="button"] {
   cursor: pointer;
 }
 
@@ -229,12 +229,6 @@ input {
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
-}
-
-.items-list {
-  display: grid;
-  gap: 0.75rem;
-  margin-top: 1rem;
 }
 
 .item-card {
@@ -374,10 +368,6 @@ input {
   100% { transform: translateY(110%); opacity: 0; }
 }
 
-.scanner-video {
-  position: relative;
-}
-
 .scanner-toast {
   position: fixed;
   left: 50%;
@@ -428,7 +418,6 @@ a {
     align-items: flex-start;
   }
 }
-
 </style>
 </head>
 <body>
@@ -467,15 +456,15 @@ a {
   </section>
 
   <section class="toolbar">
-  <input id="search" type="search" placeholder="Search rooms, collections, or items...">
+    <input id="search" type="search" placeholder="Search rooms, collections, or items...">
 
-  <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-    <button id="scanBtn">Scan Barcode</button>
-    <button id="addItemBtn" class="secondary">Add Item</button>
-    <button id="homeBtn" class="secondary" hidden>Home</button>
-    <button id="addRoomBtn" class="secondary">Add Room</button>
-  </div>
-</section>
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+      <button id="scanBtn">Scan Barcode</button>
+      <button id="addItemBtn" class="secondary">Add Item</button>
+      <button id="homeBtn" class="secondary" hidden>Home</button>
+      <button id="addRoomBtn" class="secondary">Add Room</button>
+    </div>
+  </section>
 
   <section class="view-bar">
     <div>
@@ -508,30 +497,23 @@ function showFatalError(message) {
   document.body.appendChild(el);
 }
 
-
 // Initialize auth + bind storage to authenticated client.
 let session = null;
 try {
-  // If Supabase config is missing, supabaseClient may be null.
   if (supabaseClient) {
     setSupabaseClient(supabaseClient);
     await initAuth();
     session = getSession();
     onAuthStateChange(s => { session = s; setAuthUI(!!session && !!session.user); });
   } else {
-    // Still allow offline IndexedDB rendering.
     console.warn('[startup] Supabase client is not initialized; running offline-only mode.');
   }
 } catch (e) {
   console.error('[startup] Supabase/auth init failed:', e);
-  // Continue app init offline; storage operations will fail later but render should work.
   setAuthUI(false);
 }
 
-
-
-
-// Debug: magic-link callback visibility (also helps when auth appears to "do nothing").
+// Debug panel for magic-link callback visibility.
 try {
   const params = new URLSearchParams(window.location.search);
   console.log('[auth-debug] location.href =', window.location.href);
@@ -547,12 +529,11 @@ try {
     'session expires_at: ' + (s?.expires_at || '(none)'),
   ].join('\n');
   document.body.appendChild(debug);
-}
-catch (e) {
+} catch (e) {
   console.warn('[auth-debug] failed to render debug panel', e);
 }
 
-// Safety re-check after initAuth (detectSessionInUrl sometimes needs a tick).
+// Safety re-check after initAuth.
 try {
   if (supabaseClient) {
     const { data } = await supabaseClient.auth.getSession();
@@ -564,8 +545,6 @@ try {
   console.warn('[auth-debug] getSession after initAuth failed', e);
 }
 
-
-
 const DB_NAME = "inventoryDB";
 const DB_VERSION = 4;
 const STORE_ROOMS = "rooms";
@@ -574,6 +553,7 @@ const STORE_ITEMS = "items";
 const STORE_AUTH = "auth";
 const FALLBACK_PRICE = null;
 const PRICE_LOOKUP_TIMEOUT_MS = 8000;
+
 let db;
 let deferredPrompt = null;
 let isAddingItem = false;
@@ -724,6 +704,7 @@ function buildItemCard(item) {
   const media = createElement("div");
   const titleRow = createElement("div", { className: "item-header" });
   const title = createElement("h4", { text: item.name });
+
   const diffValue = Number.isFinite(item.purchasePrice) && Number.isFinite(item.currentPrice)
     ? item.currentPrice - item.purchasePrice
     : null;
@@ -731,15 +712,18 @@ function buildItemCard(item) {
     className: diffValue !== null && diffValue < 0 ? "pill loss" : "pill",
     text: diffValue === null ? "No comparison" : `${diffValue >= 0 ? "+" : "-"}$${Math.abs(diffValue).toFixed(2)}`
   });
+
   const metaText = [
     item.barcode ? `Barcode: ${item.barcode}` : "No barcode saved",
     item.brand ? `Brand: ${item.brand}` : "",
     item.category ? `Category: ${item.category}` : ""
   ].filter(Boolean).join(" | ");
+
   const meta = createElement("p", { className: "muted", text: metaText });
   const description = item.description
     ? createElement("p", { className: "muted", text: item.description })
     : null;
+
   const priceLine = createElement("div", { className: "price-line" });
   const currentPrice = createElement("span", {
     text: Number.isFinite(item.currentPrice) ? `Current: $${formatMoney(item.currentPrice)}` : "Current: unknown"
@@ -748,12 +732,16 @@ function buildItemCard(item) {
     className: "muted",
     text: Number.isFinite(item.purchasePrice) ? `Purchase: $${formatMoney(item.purchasePrice)}` : "Purchase: unknown"
   });
+
   const updated = createElement("p", {
     className: "muted",
     text: `Updated: ${new Date(item.updated).toLocaleDateString()}`
   });
+
   const actions = createElement("div", { className: "action-row" });
   const overrideBtn = createElement("button", { className: "secondary", text: "Override Price" });
+
+  const nameBtn = createElement("button", { className: "secondary", text: "Change Name" });
   const barcodeBtn = createElement("button", {
     className: "secondary",
     text: item.barcode ? "Change Barcode" : "Add Barcode"
@@ -774,6 +762,9 @@ function buildItemCard(item) {
   overrideBtn.addEventListener("click", () => {
     void overridePrice(item.id);
   });
+  nameBtn.addEventListener("click", () => {
+    void updateItemName(item.id);
+  });
   barcodeBtn.addEventListener("click", () => {
     void attachItemBarcode(item.id);
   });
@@ -787,7 +778,7 @@ function buildItemCard(item) {
     void deleteItem(item.id);
   });
 
-  actions.append(overrideBtn, barcodeBtn, photoBtn, receiptBtn, deleteBtn);
+  actions.append(overrideBtn, nameBtn, barcodeBtn, photoBtn, receiptBtn, deleteBtn);
   details.append(titleRow, meta);
   if (description) {
     details.appendChild(description);
@@ -796,14 +787,12 @@ function buildItemCard(item) {
 
   const isAuthed = !!(session && session.user);
 
-  // Photo rendering: Blob offline fallback; otherwise download from private storage if we have a path.
   if (item.image instanceof Blob) {
     const image = createElement("img", { className: "thumb" });
     image.alt = `${item.name} photo`;
     image.src = trackedObjectUrl(item.image);
     media.appendChild(image);
   } else if (item.imagePath && isAuthed) {
-    // Async render of private content.
     const placeholder = createElement("div", { className: "thumb" });
     placeholder.style.display = 'grid';
     placeholder.style.placeItems = 'center';
@@ -825,14 +814,12 @@ function buildItemCard(item) {
       }
     })();
   } else if (item.imageUrl) {
-    // Scanned product image from UPC API (public URL string).
     const image = createElement("img", { className: "thumb" });
     image.alt = `${item.name} product image`;
     image.src = item.imageUrl;
     media.appendChild(image);
   }
 
-  // Receipt rendering.
   if (item.receipt instanceof Blob) {
     const receipt = createElement("a", { text: "Open receipt" });
     receipt.href = trackedObjectUrl(item.receipt);
@@ -883,9 +870,7 @@ function getRoomItems(room, items) {
 }
 
 function itemMatchesSearch(item, searchTerm) {
-  if (!searchTerm) {
-    return true;
-  }
+  if (!searchTerm) return true;
 
   const haystack = [
     item.name,
@@ -957,11 +942,7 @@ function updateToolbar(room) {
   homeButton.hidden = !room;
   addRoomButton.hidden = !!room;
 
-  if (room) {
-    search.placeholder = `Search ${room.name} items...`;
-  } else {
-    search.placeholder = "Search rooms or items...";
-  }
+  search.placeholder = room ? `Search ${room.name} items...` : "Search rooms or items...";
 }
 
 function buildRoomTile(room, roomItems) {
@@ -978,25 +959,23 @@ function buildRoomTile(room, roomItems) {
     createStat(`${roomItems.length} ${pluralize(roomItems.length, "item")}`),
     createStat(`$${formatMoney(sumItemValue(roomItems))}`)
   );
+
   deleteButton.addEventListener("click", event => {
     event.stopPropagation();
     void deleteRoom(room.id);
   });
-  actions.appendChild(deleteButton);
 
+  actions.appendChild(deleteButton);
   tile.append(titleBlock, stats, actions);
   return tile;
 }
 
-
-
 function buildDashboardView(container, rooms, items, searchTerm) {
   const grid = createElement("div", { className: "tile-grid" });
+
   const visibleRooms = rooms.filter(room => {
     const roomItems = getRoomItems(room, items);
-    if (!searchTerm) {
-      return true;
-    }
+    if (!searchTerm) return true;
     return room.name.toLowerCase().includes(searchTerm)
       || roomItems.some(item => itemMatchesSearch(item, searchTerm));
   });
@@ -1043,7 +1022,6 @@ function buildRoomView(container, room, collections, items, searchTerm) {
   });
 }
 
-
 async function render() {
   cleanupObjectUrls();
 
@@ -1055,12 +1033,7 @@ async function render() {
 
   const container = document.getElementById("collections");
   const searchTerm = document.getElementById("search").value.trim().toLowerCase();
-  let room = currentRoomId ? rooms.find(entry => entry.id === currentRoomId) : null;
-
-  if (currentRoomId && !room) {
-    currentRoomId = null;
-    room = null;
-  }
+  const room = currentRoomId ? rooms.find(entry => entry.id === currentRoomId) : null;
 
   container.innerHTML = "";
   document.getElementById("totalValue").textContent = formatMoney(sumItemValue(items));
@@ -1079,9 +1052,7 @@ async function render() {
 
 async function addRoom() {
   if (!db) {
-    try {
-      await openDB();
-    } catch (err) {
+    try { await openDB(); } catch (err) {
       console.error("Failed opening DB:", err);
       alert("Unable to access storage. Try reloading the app.");
       return;
@@ -1089,9 +1060,7 @@ async function addRoom() {
   }
 
   const name = prompt("Room name?");
-  if (name === null) {
-    return;
-  }
+  if (name === null) return;
 
   const trimmed = name.trim();
   if (!trimmed) {
@@ -1101,7 +1070,6 @@ async function addRoom() {
 
   try {
     const roomId = await addRecord(STORE_ROOMS, { name: trimmed, created: Date.now() });
-    // Auto-create default collection for this room
     await addRecord(STORE_COLLECTIONS, { name: `${trimmed} Items`, roomId, created: Date.now() });
     await render();
   } catch (err) {
@@ -1110,7 +1078,6 @@ async function addRoom() {
   }
 }
 
-
 async function addItem(collectionId) {
   if (isAddingItem) {
     alert("Finish the current item before adding another.");
@@ -1118,12 +1085,9 @@ async function addItem(collectionId) {
   }
 
   isAddingItem = true;
-
   try {
     const name = prompt("Item name?");
-    if (name === null) {
-      return;
-    }
+    if (name === null) return;
 
     const trimmedName = name.trim();
     if (!trimmedName) {
@@ -1135,37 +1099,28 @@ async function addItem(collectionId) {
     while (purchaseInput.value === undefined) {
       purchaseInput = parsePriceInput("Purchase price? Leave blank if unknown.");
     }
-    if (purchaseInput.cancelled) {
-      return;
-    }
+    if (purchaseInput.cancelled) return;
 
-    // Get room ID for this collection
     const collections = await getAllRecords(STORE_COLLECTIONS);
     const collection = collections.find(c => c.id === collectionId);
     const roomId = collection ? collection.roomId : null;
 
-    try {
-      await addRecord(STORE_ITEMS, {
-        name: trimmedName,
-        barcode: "",
-        brand: "",
-        category: "",
-        description: "",
-        image: null,
-        imageUrl: "",
-        receipt: null,
-        purchasePrice: purchaseInput.value,
-        estimatedPrice: null,
-        currentPrice: purchaseInput.value,
-        updated: Date.now(),
-        collectionId,
-        roomId
-      });
-    } catch (err) {
-      console.error("Failed to add item:", err);
-      alert("Could not save the item. Check the browser console for details.");
-      return;
-    }
+    await addRecord(STORE_ITEMS, {
+      name: trimmedName,
+      barcode: "",
+      brand: "",
+      category: "",
+      description: "",
+      image: null,
+      imageUrl: "",
+      receipt: null,
+      purchasePrice: purchaseInput.value,
+      estimatedPrice: null,
+      currentPrice: purchaseInput.value,
+      updated: Date.now(),
+      collectionId,
+      roomId
+    });
 
     await render();
   } finally {
@@ -1180,42 +1135,32 @@ async function addScannedItem(collectionId) {
   }
 
   isAddingItem = true;
-
   try {
     const barcode = await scanBarcode();
-    if (!barcode || typeof barcode !== "string") {
-      return;
-    }
+    if (!barcode || typeof barcode !== "string") return;
 
     const details = await fetchBarcodeDetails(barcode);
 
-    // Get room ID for this collection
     const collections = await getAllRecords(STORE_COLLECTIONS);
     const collection = collections.find(c => c.id === collectionId);
     const roomId = collection ? collection.roomId : null;
 
-    try {
-      await addRecord(STORE_ITEMS, {
-        name: details.name,
-        barcode,
-        brand: details.brand,
-        category: details.category,
-        description: details.description,
-        image: null,
-        imageUrl: details.imageUrl,
-        receipt: null,
-        purchasePrice: details.price,
-        estimatedPrice: details.price,
-        currentPrice: details.price,
-        updated: Date.now(),
-        collectionId,
-        roomId
-      });
-    } catch (err) {
-      console.error("Failed to add scanned item:", err);
-      alert("Could not save the scanned item. Check the browser console for details.");
-      return;
-    }
+    await addRecord(STORE_ITEMS, {
+      name: details.name,
+      barcode,
+      brand: details.brand,
+      category: details.category,
+      description: details.description,
+      image: null,
+      imageUrl: details.imageUrl,
+      receipt: null,
+      purchasePrice: details.price,
+      estimatedPrice: details.price,
+      currentPrice: details.price,
+      updated: Date.now(),
+      collectionId,
+      roomId
+    });
 
     await render();
 
@@ -1234,13 +1179,10 @@ async function addScannedItem(collectionId) {
 
 async function deleteItem(id) {
   const confirmed = confirm("Delete this item?");
-  if (!confirmed) {
-    return;
-  }
+  if (!confirmed) return;
 
   const item = await getRecord(STORE_ITEMS, id);
   if (item) {
-    // Best-effort delete from private storage when possible.
     const isAuthed = !!(session && session.user);
     if (isAuthed) {
       try {
@@ -1263,19 +1205,35 @@ async function deleteItem(id) {
 async function overridePrice(id) {
   const items = await getAllRecords(STORE_ITEMS);
   const item = items.find(entry => entry.id === id);
-  if (!item) {
-    return;
-  }
+  if (!item) return;
 
   let input = parsePriceInput("New price?");
   while (input.value === undefined) {
     input = parsePriceInput("New price?");
   }
-  if (input.cancelled || input.value === null) {
+  if (input.cancelled || input.value === null) return;
+
+  item.currentPrice = input.value;
+  item.updated = Date.now();
+
+  await putRecord(STORE_ITEMS, item);
+  await render();
+}
+
+async function updateItemName(id) {
+  const item = await getRecord(STORE_ITEMS, id);
+  if (!item) return;
+
+  const value = prompt("New item name?");
+  if (value === null) return;
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    alert("Item name cannot be empty.");
     return;
   }
 
-  item.currentPrice = input.value;
+  item.name = trimmed;
   item.updated = Date.now();
 
   await putRecord(STORE_ITEMS, item);
@@ -1289,10 +1247,8 @@ async function updateItemFile(id, field, type) {
   const item = await getRecord(STORE_ITEMS, id);
   if (!item) return;
 
-  // Offline backup: always keep the Blob in IndexedDB.
   item[field] = file;
 
-  // Online path metadata: if logged in, also upload to Supabase and persist storage path.
   const isAuthed = !!(session && session.user);
   const userId = session?.user?.id;
   const bucketType = field === 'image' ? 'image' : 'receipt';
@@ -1302,7 +1258,6 @@ async function updateItemFile(id, field, type) {
     try {
       const upload = await storage.uploadFile(file, storagePath, bucketType);
       if (upload?.success && upload.source === 'supabase') {
-        // Save metadata so we can re-render from Supabase later.
         if (field === 'image') item.imagePath = storagePath;
         if (field === 'receipt') item.receiptPath = storagePath;
       }
@@ -1336,9 +1291,7 @@ async function attachItemBarcode(id) {
 async function updateItemBarcode(id, barcode) {
   try {
     const item = await getRecord(STORE_ITEMS, id);
-    if (!item) {
-      return;
-    }
+    if (!item) return;
 
     const details = await fetchBarcodeDetails(barcode);
 
@@ -1369,14 +1322,10 @@ async function updateItemBarcode(id, barcode) {
 async function refreshItemPrice(id) {
   try {
     const item = await getRecord(STORE_ITEMS, id);
-    if (!item || !item.barcode) {
-      return;
-    }
+    if (!item || !item.barcode) return;
 
     const newPrice = await fetchPrice(item.barcode);
-    if (newPrice === null) {
-      return;
-    }
+    if (newPrice === null) return;
 
     item.currentPrice = Number.isFinite(item.currentPrice) ? item.currentPrice : newPrice;
     item.estimatedPrice = newPrice;
@@ -1392,9 +1341,7 @@ async function refreshItemPrice(id) {
 async function updatePrice(id) {
   const items = await getAllRecords(STORE_ITEMS);
   const item = items.find(entry => entry.id === id);
-  if (!item) {
-    return;
-  }
+  if (!item) return;
 
   if (!item.barcode) {
     alert("This item does not have a barcode to look up.");
@@ -1455,154 +1402,11 @@ function pickFile(type) {
 
 async function manualBarcodeEntry(message) {
   const value = prompt(message);
-  if (value === null) {
-    return undefined;
-  }
+  if (value === null) return undefined;
 
   const trimmed = value.trim();
-  if (!trimmed) {
-    return null; // User skipped or left empty
-  }
+  if (!trimmed) return null;
   return trimmed;
-}
-
-
-async function deleteRoom(id) {
-  const confirmed = confirm("Delete this room and all its items?");
-  if (!confirmed) {
-    return;
-  }
-
-  const collections = await getAllRecords(STORE_COLLECTIONS);
-  const roomCollections = collections.filter(collection => collection.roomId === id);
-  const items = await getAllRecords(STORE_ITEMS);
-
-  for (const collection of roomCollections) {
-    const collectionItems = items.filter(item => item.collectionId === collection.id);
-    for (const item of collectionItems) {
-      await deleteRecord(STORE_ITEMS, item.id);
-    }
-    await deleteRecord(STORE_COLLECTIONS, collection.id);
-  }
-
-  await deleteRecord(STORE_ROOMS, id);
-  if (currentRoomId === id) {
-    currentRoomId = null;
-  }
-  await render();
-}
-
-async function chooseCollectionId() {
-  const rooms = await getAllRecords(STORE_ROOMS);
-  if (rooms.length === 0) {
-    alert("Create a room first.");
-    return null;
-  }
-
-  if (rooms.length === 1) {
-    const collections = await getAllRecords(STORE_COLLECTIONS);
-    const collection = collections.find(c => c.roomId === rooms[0].id);
-    return collection ? collection.id : null;
-  }
-
-  const promptText = rooms.map((room, index) => `${index + 1}. ${room.name}`).join("\n");
-  const selection = prompt(`Choose a room for this item:\n${promptText}`);
-  if (selection === null) {
-    return null;
-  }
-
-  const trimmed = selection.trim();
-  const numeric = Number(trimmed);
-  let selectedRoom = null;
-  
-  if (Number.isFinite(numeric) && numeric >= 1 && numeric <= rooms.length) {
-    selectedRoom = rooms[numeric - 1];
-  } else {
-    selectedRoom = rooms.find(room => room.name.toLowerCase() === trimmed.toLowerCase());
-  }
-
-  if (!selectedRoom) {
-    alert("Could not match the selected room.");
-    return null;
-  }
-
-  const collections = await getAllRecords(STORE_COLLECTIONS);
-  const collection = collections.find(c => c.roomId === selectedRoom.id);
-  return collection ? collection.id : null;
-}
-console.log("ZXingBrowser =", window.ZXingBrowser);
-console.log("mediaDevices =", navigator.mediaDevices);
-
-async function scanBarcode() {
-  if (!window.ZXingBrowser || !navigator.mediaDevices) {
-    return manualBarcodeEntry("Camera scanning is unavailable. Enter barcode manually (or leave empty to skip):");
-  }
-
-  return new Promise(async resolve => {
-    const codeReader = new ZXingBrowser.BrowserMultiFormatReader();
-    const overlay = createElement("div", { className: "scanner-overlay" });
-    const panel = createElement("div", { className: "scanner-panel" });
-    const label = createElement("p", {
-      className: "muted",
-      text: "Point the camera at a barcode, or cancel to type it manually."
-    });
-    const videoWrap = createElement("div", { className: "scanner-video" });
-    const video = document.createElement("video");
-    const spinner = createElement("div", { className: "scanner-spinner" });
-    const frame = createElement("div", { className: "scanner-frame" });
-    const scanLine = createElement("div", { className: "scan-line" });
-    const cancelButton = createElement("button", { className: "secondary", text: "Cancel" });
-    const skipButton = createElement("button", { className: "secondary", text: "Skip" });
-
-    frame.appendChild(scanLine);
-    videoWrap.appendChild(video);
-    videoWrap.appendChild(frame);
-    panel.append(label, spinner, videoWrap, cancelButton, skipButton);
-    overlay.appendChild(panel);
-    document.body.appendChild(overlay);
-
-    let controls = null;
-    let settled = false;
-
-    const finish = async value => {
-      if (settled) return;
-      settled = true;
-      try {
-        controls?.stop();
-      } catch (error) {
-        console.warn("Failed to stop scanner controls:", error);
-      }
-      overlay.remove();
-      resolve(value);
-    };
-
-    cancelButton.addEventListener("click", async () => {
-      const manual = await manualBarcodeEntry("Enter barcode manually (or leave empty to skip):");
-      await finish(manual);
-    });
-
-    skipButton.addEventListener("click", async () => {
-      await finish(null);
-    });
-
-    try {
-      controls = await codeReader.decodeFromVideoDevice(null, video, async result => {
-        if (result) {
-          showToast("Barcode Found ✓");
-          scanLine.classList.remove("running");
-          await finish(result.getText());
-        }
-      });
-
-      spinner.style.display = "none";
-      frame.style.display = "block";
-      requestAnimationFrame(() => scanLine.classList.add("running"));
-    } catch {
-      spinner.style.display = "none";
-      const manual = await manualBarcodeEntry("Camera failed. Enter barcode manually (or leave empty to skip):");
-      await finish(manual);
-    }
-  });
 }
 
 function cleanLookupText(value) {
@@ -1611,49 +1415,29 @@ function cleanLookupText(value) {
 
 function limitLookupText(value, maxLength = 180) {
   const text = cleanLookupText(value);
-  if (text.length <= maxLength) {
-    return text;
-  }
-
+  if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength - 3).trim()}...`;
 }
 
 function parseLookupPrice(value) {
-  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
-    return value;
-  }
-
-  if (typeof value !== "string") {
-    return null;
-  }
-
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
+  if (typeof value !== "string") return null;
   const match = value.replace(/,/g, "").match(/\d+(?:\.\d+)?/);
-  if (!match) {
-    return null;
-  }
-
+  if (!match) return null;
   const price = Number(match[0]);
   return Number.isFinite(price) && price >= 0 ? price : null;
 }
 
 function extractLookupPrice(item) {
-  if (!item) {
-    return null;
-  }
-
+  if (!item) return null;
   const directPrice = parseLookupPrice(item.lowest_recorded_price);
-  if (directPrice !== null) {
-    return directPrice;
-  }
+  if (directPrice !== null) return directPrice;
 
   if (Array.isArray(item.offers)) {
     const offerPrices = item.offers
       .map(offer => parseLookupPrice(offer.price))
       .filter(price => price !== null);
-
-    if (offerPrices.length > 0) {
-      return Math.min(...offerPrices);
-    }
+    if (offerPrices.length > 0) return Math.min(...offerPrices);
   }
 
   return null;
@@ -1668,10 +1452,7 @@ async function fetchBarcodeLookup(barcode) {
       signal: controller.signal
     });
 
-    if (!response.ok) {
-      return null;
-    }
-
+    if (!response.ok) return null;
     const data = await response.json();
     return data.items?.[0] || null;
   } catch {
@@ -1719,72 +1500,100 @@ async function fetchPrice(barcode) {
   return extractLookupPrice(item);
 }
 
-window.addEventListener("beforeinstallprompt", event => {
-  event.preventDefault();
-  deferredPrompt = event;
-  document.getElementById("installBtn").hidden = false;
-});
-
-document.getElementById("installBtn").addEventListener("click", async () => {
-  if (!deferredPrompt) {
-    return;
+async function scanBarcode() {
+  if (!window.ZXingBrowser || !navigator.mediaDevices) {
+    return manualBarcodeEntry("Camera scanning is unavailable. Enter barcode manually (or leave empty to skip):");
   }
 
-  deferredPrompt.prompt();
-  await deferredPrompt.userChoice;
-  deferredPrompt = null;
-  document.getElementById("installBtn").hidden = true;
-});
+  return new Promise(async resolve => {
+    const codeReader = new ZXingBrowser.BrowserMultiFormatReader();
+    const overlay = createElement("div", { className: "scanner-overlay" });
+    const panel = createElement("div", { className: "scanner-panel" });
+    const label = createElement("p", {
+      className: "muted",
+      text: "Point the camera at a barcode, or cancel to type it manually."
+    });
+    const videoWrap = createElement("div", { className: "scanner-video" });
+    const video = document.createElement("video");
+    const spinner = createElement("div", { className: "scanner-spinner" });
+    const frame = createElement("div", { className: "scanner-frame" });
+    const scanLine = createElement("div", { className: "scan-line" });
+    const cancelButton = createElement("button", { className: "secondary", text: "Cancel" });
+    const skipButton = createElement("button", { className: "secondary", text: "Skip" });
 
-document.getElementById("search").addEventListener("input", () => {
-  void render();
-});
-document.getElementById("addRoomBtn").addEventListener("click", () => {
-  void addRoom();
-});
-document.getElementById("scanBtn").addEventListener("click", async () => {
-  const rooms = await getAllRecords(STORE_ROOMS);
-  if (rooms.length === 0) {
-    alert("Create a room first.");
-    return;
-  }
+    frame.appendChild(scanLine);
+    videoWrap.appendChild(video);
+    videoWrap.appendChild(frame);
+    panel.append(label, spinner, videoWrap, cancelButton, skipButton);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    let controls = null;
+    let settled = false;
+
+    const finish = async value => {
+      if (settled) return;
+      settled = true;
+      try { controls?.stop(); } catch (error) { console.warn("Failed to stop scanner controls:", error); }
+      overlay.remove();
+      resolve(value);
+    };
+
+    cancelButton.addEventListener("click", async () => {
+      const manual = await manualBarcodeEntry("Enter barcode manually (or leave empty to skip):");
+      await finish(manual);
+    });
+
+    skipButton.addEventListener("click", async () => {
+      await finish(null);
+    });
+
+    try {
+      controls = await codeReader.decodeFromVideoDevice(null, video, async result => {
+        if (result) {
+          showToast("Barcode Found ✓");
+          scanLine.classList.remove("running");
+          await finish(result.getText());
+        }
+      });
+
+      spinner.style.display = "none";
+      frame.style.display = "block";
+      requestAnimationFrame(() => scanLine.classList.add("running"));
+    } catch {
+      spinner.style.display = "none";
+      const manual = await manualBarcodeEntry("Camera failed. Enter barcode manually (or leave empty to skip):");
+      await finish(manual);
+    }
+  });
+}
+
+async function deleteRoom(id) {
+  const confirmed = confirm("Delete this room and all its items?");
+  if (!confirmed) return;
+
   const collections = await getAllRecords(STORE_COLLECTIONS);
-  const roomCollection = collections.find(c => c.roomId === currentRoomId);
-  if (roomCollection) {
-    void addScannedItem(roomCollection.id);
-  }
-});
-document.getElementById("addItemBtn").addEventListener("click", async () => {
-  if (!currentRoomId) {
-    alert("Select a room first.");
-    return;
+  const roomCollections = collections.filter(collection => collection.roomId === id);
+  const items = await getAllRecords(STORE_ITEMS);
+
+  for (const collection of roomCollections) {
+    const collectionItems = items.filter(item => item.collectionId === collection.id);
+    for (const item of collectionItems) {
+      await deleteRecord(STORE_ITEMS, item.id);
+    }
+    await deleteRecord(STORE_COLLECTIONS, collection.id);
   }
 
-  const rooms = await getAllRecords(STORE_ROOMS);
-  if (rooms.length === 0) {
-    alert("Create a room first.");
-    return;
-  }
-
-  const collections = await getAllRecords(STORE_COLLECTIONS);
-  const roomCollection = collections.find(c => c.roomId === currentRoomId);
-  if (!roomCollection) {
-    alert("No collection found for the selected room. Create a room again.");
-    return;
-  }
-
-  void addItem(roomCollection.id);
-});
-document.getElementById("homeBtn").addEventListener("click", () => {
-  setView();
-});
-window.addEventListener("pagehide", cleanupObjectUrls);
+  await deleteRecord(STORE_ROOMS, id);
+  if (currentRoomId === id) currentRoomId = null;
+  await render();
+}
 
 function setAuthUI(isAuthed) {
   const sendBtn = document.getElementById('sendMagicLinkBtn');
   const signOutBtn = document.getElementById('signOutBtn');
   const emailInput = document.getElementById('magicEmail');
-  // Disable send when signed in.
+
   if (isAuthed) {
     if (sendBtn) sendBtn.hidden = true;
     if (emailInput) emailInput.hidden = true;
@@ -1830,20 +1639,57 @@ function wireAuthUI() {
   }
 }
 
+window.addEventListener("beforeinstallprompt", event => {
+  event.preventDefault();
+  deferredPrompt = event;
+  document.getElementById("installBtn").hidden = false;
+});
+
+document.getElementById("installBtn").addEventListener("click", async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  document.getElementById("installBtn").hidden = true;
+});
+
+document.getElementById("search").addEventListener("input", () => { void render(); });
+document.getElementById("addRoomBtn").addEventListener("click", () => { void addRoom(); });
+
+document.getElementById("scanBtn").addEventListener("click", async () => {
+  const rooms = await getAllRecords(STORE_ROOMS);
+  if (rooms.length === 0) {
+    alert("Create a room first.");
+    return;
+  }
+  const collections = await getAllRecords(STORE_COLLECTIONS);
+  const roomCollection = collections.find(c => c.roomId === currentRoomId);
+  if (roomCollection) {
+    void addScannedItem(roomCollection.id);
+  }
+});
+
+document.getElementById("addItemBtn").addEventListener("click", async () => {
+  if (!currentRoomId) {
+    alert("Select a room first.");
+    return;
+  }
+  const collections = await getAllRecords(STORE_COLLECTIONS);
+  const roomCollection = collections.find(c => c.roomId === currentRoomId);
+  if (!roomCollection) {
+    alert("No collection found for the selected room. Create a room again.");
+    return;
+  }
+  void addItem(roomCollection.id);
+});
+
+document.getElementById("homeBtn").addEventListener("click", () => { setView(); });
+window.addEventListener("pagehide", cleanupObjectUrls);
+
 (async () => {
   wireAuthUI();
   setAuthUI(!!session && !!session.user);
-  if (session) {
-    // Basic: show signed-in state.
-    setAuthUI(true);
-  } else {
-    setAuthUI(false);
-  }
-  if (!document.body.dataset.authMounted) {
-    document.body.dataset.authMounted = 'true';
-    // Basic gating: when logged out, disable edits but still allow offline read.
-    // Full auth UI is added below.
-  }
+
   await openDB();
   await render();
 
@@ -1858,3 +1704,4 @@ function wireAuthUI() {
 </script>
 </body>
 </html>
+
