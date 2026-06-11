@@ -1785,11 +1785,20 @@ function wireAuthUI() {
       } catch (e) {
         console.error('signInWithPassword failed', e);
         setStatus('');
+
+        // Show the actual Supabase error message/code so you can fix config/confirmation issues.
+        const status = e?.status;
+        const code = e?.code;
+        const message = e?.message || String(e);
+        const detailsLine = [status ? `status: ${status}` : null, code ? `code: ${code}` : null].filter(Boolean).join(', ');
+
+        // Keep the friendly message only for the specific heuristic.
         if (looksLikeUserNotFound(e)) {
-          alert('No account found for that email. Use Sign up.');
+          alert(`Login failed: account not found for that email.\n\nSupabase says: ${message}${detailsLine ? ` (${detailsLine})` : ''}`);
           return;
         }
-        alert('Login failed. Check credentials.');
+
+        alert(`Login failed.\n\nSupabase says: ${message}${detailsLine ? ` (${detailsLine})` : ''}`);
       }
     });
   }
