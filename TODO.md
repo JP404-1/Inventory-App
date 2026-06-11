@@ -1,11 +1,6 @@
-# TODO
-
-## Auth updates: remove magic link, add email/password login + signup
-- [x] Inspect current auth implementation and identify magic link usage.
-- [x] Update `supabase-auth.js` to remove `sendMagicLink` and add `signInWithPassword` + `signUpWithPassword`.
-- [x] Update `index.html` UI/logic: replace magic link fields/buttons with email+password login + signup controls.
-- [x] Implement behavior: try login first; if email not recognized, switch UI to signup mode (or show signup option) and allow user to create account.
-- [ ] Verify sign-out still works and authenticated uploads/deletes still gate by `session.user`.
-- [ ] Manual test: existing user login; unknown email signup; persistence after refresh.
-
+- [ ] Replace header inline auth controls with a glassmorphism login overlay modal
+- [ ] Add two separate buttons: “Log in” and “Sign up” inside the overlay
+- [ ] Update JS `setAuthUI()` and `wireAuthUI()` to show/hide overlay based on auth state
+- [ ] Wire click handlers for overlay buttons and keep sign out in header
+- [ ] Quick manual test: login, signup, and hiding overlay after auth
 

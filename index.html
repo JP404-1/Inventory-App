@@ -77,6 +77,12 @@ button {
   transition: transform 120ms ease, background 120ms ease;
 }
 
+button:focus-visible {
+  outline: 2px solid rgba(63, 182, 139, 0.9);
+  outline-offset: 3px;
+}
+
+
 button:hover {
   background: #56c89e;
   transform: translateY(-1px);
@@ -398,9 +404,67 @@ a.tile[role="button"] {
   text-align: center;
 }
 
+/* Auth overlay (glassmorphism) */
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.auth-overlay.show {
+  display: flex;
+}
+
+.auth-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(10px);
+}
+
+.auth-modal {
+  position: relative;
+  width: min(560px, 100%);
+  border-radius: 22px;
+  border: 1px solid rgba(63, 182, 139, 0.25);
+  background: rgba(18, 30, 48, 0.55);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.4);
+  padding: 1.25rem 1.25rem 1.1rem;
+}
+
+.auth-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.auth-header h2 {
+  font-size: 1.2rem;
+}
+
+.auth-fields input {
+  width: 100%;
+}
+
+.auth-actions button.secondary {
+  background: rgba(29, 41, 64, 0.9);
+}
+
+#authStatus {
+  color: var(--muted);
+}
+
 a {
   color: #93d6bb;
 }
+
 
 @media (max-width: 720px) {
   .toolbar,
@@ -429,16 +493,36 @@ a {
   <div class="action-row">
     <button id="installBtn" class="secondary" hidden>Install App</button>
     <div id="authControls" class="action-row" style="gap:0.5rem; margin-left:0.75rem; align-items: center;">
-      <div id="authMode" class="action-row" style="gap:0.5rem; flex-wrap:wrap;">
-        <input id="emailInput" type="email" placeholder="Email" style="width: 210px;" />
-        <input id="passwordInput" type="password" placeholder="Password" style="width: 210px;" />
-        <button id="loginBtn" class="secondary">Log in</button>
-        <button id="signupBtn" class="secondary" hidden>Sign up</button>
-      </div>
+      <button id="openAuthOverlayBtn" class="secondary">Log in</button>
       <button id="signOutBtn" class="secondary" hidden>Sign out</button>
     </div>
   </div>
 </header>
+
+<!-- Auth overlay (glassmorphism) -->
+<div id="authOverlay" class="auth-overlay" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="auth-modal">
+    <div class="auth-header">
+      <h2>Welcome</h2>
+      <button id="closeAuthOverlayBtn" class="secondary" style="padding:0.4rem 0.75rem;">Cancel</button>
+    </div>
+
+    <p class="muted" style="margin-top:-0.25rem;">Sign in to unlock online features.</p>
+
+    <div class="auth-fields" style="margin-top:1rem; display:grid; gap:0.75rem;">
+      <input id="emailInput" type="email" placeholder="Email" autocomplete="email" />
+      <input id="passwordInput" type="password" placeholder="Password" autocomplete="current-password" />
+    </div>
+
+    <div class="auth-actions" style="display:flex; gap:0.75rem; margin-top:1rem; flex-wrap:wrap;">
+      <button id="loginBtn" class="secondary" style="flex:1; min-width:170px;">Log in</button>
+      <button id="signupBtn" class="secondary" style="flex:1; min-width:170px;">Sign up</button>
+    </div>
+
+    <p id="authStatus" class="muted" style="min-height:1.2em; margin-top:0.75rem; font-size:0.92rem;"></p>
+  </div>
+</div>
+
 
 <!-- Supabase runtime config for plain static hosting -->
 <script src="./supabase-runtime-config.js"></script>
@@ -1594,28 +1678,35 @@ async function deleteRoom(id) {
 let authMode = 'login';
 
 function setAuthUI(isAuthed) {
-  const authControls = document.getElementById('authMode');
-  const loginBtn = document.getElementById('loginBtn');
-  const signupBtn = document.getElementById('signupBtn');
+  const overlay = document.getElementById('authOverlay');
+  const openBtn = document.getElementById('openAuthOverlayBtn');
+  const signOutBtn = document.getElementById('signOutBtn');
   const emailInput = document.getElementById('emailInput');
   const passwordInput = document.getElementById('passwordInput');
-  const signOutBtn = document.getElementById('signOutBtn');
+  const loginBtn = document.getElementById('loginBtn');
+  const signupBtn = document.getElementById('signupBtn');
 
   if (isAuthed) {
-    if (authControls) authControls.hidden = true;
+    overlay?.classList.remove('show');
+    overlay?.setAttribute('aria-hidden', 'true');
+    openBtn && (openBtn.hidden = true);
     if (signOutBtn) signOutBtn.hidden = false;
     return;
   }
 
-  if (authControls) authControls.hidden = false;
+  // Not authed => show overlay.
+  overlay?.classList.add('show');
+  overlay?.setAttribute('aria-hidden', 'false');
+  if (openBtn) openBtn.hidden = true;
   if (signOutBtn) signOutBtn.hidden = true;
 
-  // Mode visibility.
-  if (loginBtn) loginBtn.hidden = authMode !== 'login';
-  if (signupBtn) signupBtn.hidden = authMode !== 'signup';
+  // Mode visibility: both buttons visible per requirement.
+  if (loginBtn) loginBtn.hidden = false;
+  if (signupBtn) signupBtn.hidden = false;
   if (emailInput) emailInput.hidden = false;
   if (passwordInput) passwordInput.hidden = false;
 }
+
 
 function looksLikeUserNotFound(err) {
   const msg = (err?.message || '').toLowerCase();
@@ -1638,12 +1729,47 @@ function wireAuthUI() {
   const signOutBtn = document.getElementById('signOutBtn');
   const emailInput = document.getElementById('emailInput');
   const passwordInput = document.getElementById('passwordInput');
+  const overlay = document.getElementById('authOverlay');
+  const openBtn = document.getElementById('openAuthOverlayBtn');
+  const closeBtn = document.getElementById('closeAuthOverlayBtn');
+  const authStatus = document.getElementById('authStatus');
+
+  const setStatus = (text) => {
+    if (authStatus) authStatus.textContent = text || '';
+  };
 
   const readCreds = () => {
     const email = (emailInput?.value || '').trim();
     const password = passwordInput?.value || '';
     return { email, password };
   };
+
+  const showOverlay = () => {
+    overlay?.classList.add('show');
+    overlay?.setAttribute('aria-hidden', 'false');
+  };
+  const hideOverlay = () => {
+    overlay?.classList.remove('show');
+    overlay?.setAttribute('aria-hidden', 'true');
+  };
+
+  if (openBtn) {
+    openBtn.addEventListener('click', () => {
+      setStatus('');
+      showOverlay();
+    });
+  }
+
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      setStatus('');
+      hideOverlay();
+    });
+  }
+
+  overlay?.addEventListener('click', (e) => {
+    if (e.target === overlay) hideOverlay();
+  });
 
   if (loginBtn) {
     loginBtn.addEventListener('click', async () => {
@@ -1652,15 +1778,15 @@ function wireAuthUI() {
       if (!password) return alert('Enter your password.');
 
       try {
+        setStatus('Logging you in...');
         await signInWithPassword(email, password);
-        authMode = 'login';
-        setAuthUI(!!session && !!session.user);
+        setAuthUI(true);
+        hideOverlay();
       } catch (e) {
         console.error('signInWithPassword failed', e);
+        setStatus('');
         if (looksLikeUserNotFound(e)) {
-          authMode = 'signup';
-          setAuthUI(false);
-          alert('No account found for that email. Switch to Sign up.');
+          alert('No account found for that email. Use Sign up.');
           return;
         }
         alert('Login failed. Check credentials.');
@@ -1675,12 +1801,13 @@ function wireAuthUI() {
       if (!password) return alert('Enter a password.');
 
       try {
+        setStatus('Creating account...');
         await signUpWithPassword(email, password);
-        authMode = 'login';
         setAuthUI(false);
         alert('Account created. Logging you in...');
       } catch (e) {
         console.error('signUpWithPassword failed', e);
+        setStatus('');
         alert('Sign up failed. Check console for details.');
       }
     });
@@ -1697,6 +1824,7 @@ function wireAuthUI() {
     });
   }
 }
+
 
 
 window.addEventListener("beforeinstallprompt", event => {
@@ -1750,11 +1878,11 @@ window.addEventListener("pagehide", cleanupObjectUrls);
   wireAuthUI();
   setAuthUI(!!session && !!session.user);
 
-  // Ensure mode reset when logged out.
+  // Ensure overlay shown when logged out.
   if (!(session && session.user)) {
-    authMode = 'login';
     setAuthUI(false);
   }
+
 
   await openDB();
 
