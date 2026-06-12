@@ -1892,6 +1892,21 @@ window.addEventListener("pagehide", cleanupObjectUrls);
     setAuthUI(false);
   }
 
+  // If Supabase email OTP redirect landed us here with an error hash (otp_expired / access_denied),
+  // keep the app usable and show the user a helpful message.
+  try {
+    const hash = window.location.hash || '';
+    if (hash.includes('otp_expired') || hash.toLowerCase().includes('expired')) {
+      alert('Email link/OTP expired. Sign in again to request a fresh confirmation email.');
+    }
+    if (hash.includes('access_denied')) {
+      // Email confirmation / invalid link generally shows up here.
+      // We already show the alert above for otp_expired; keep this as a backup.
+      console.warn('[auth-debug] access_denied hash:', hash);
+    }
+  } catch (e) {
+    console.warn('[auth-debug] failed to parse hash for auth errors', e);
+  }
 
   await openDB();
 
