@@ -1015,6 +1015,146 @@ function updateViewHeader(room) {
   title.textContent = "";
 }
 
+// =========================
+// Supabase-first + IndexedDB fallback helpers
+// =========================
+
+function assertAuthed() {
+  if (!session?.user) throw new Error('Not authenticated');
+}
+
+function getOwnerId() {
+  // owner_id is uuid in your DB, and matches session.user.id
+  return session?.user?.id;
+}
+
+async function loadFromSupabase() {
+  assertAuthed();
+
+  // We keep collections because items have collection_id in DB.
+  // Collections will still be hidden in UI.
+  const ownerId = getOwnerId();
+
+  const [{ data: rooms, error: roomsError }, { data: collections, error: collectionsError }, { data: items, error: itemsError }] = await Promise.all([
+    supabaseClient.from('rooms').select('*').eq('owner_id', ownerId).order('created_at', { ascending: false }),
+    supabaseClient.from('collections').select('*').eq('owner_id', ownerId),
+    supabaseClient.from('items').select('*').eq('owner_id', ownerId)
+  ]);
+
+  if (roomsError) throw roomsError;
+  if (collectionsError) throw collectionsError;
+  if (itemsError) throw itemsError;
+
+  // Normalize fields to what current UI expects:
+  // - IndexedDB uses camelCase: roomId/collectionId
+  // - Supabase uses snake_case: room_id/collection_id
+  const roomsN = (rooms || []).map(r => ({ ...r, id: Number(r.id) }));
+  const collectionsN = (collections || []).map(c => ({
+    ...c,
+    id: Number(c.id),
+    roomId: Number(c.room_id ?? c.roomId),
+  }));
+  const itemsN = (items || []).map(i => ({
+    ...i,
+    id: Number(i.id),
+    collectionId: Number(i.collection_id ?? i.collectionId),
+    roomId: Number(i.room_id ?? i.roomId),
+    // UI expects either Blob or imageUrl string.
+    // image bytea -> Blob is optional; but we can still render via image_url text path.
+    // receipt bytea similarly.
+  }));
+
+  return { rooms: roomsN, collections: collectionsN, items: itemsN };
+}
+
+async function loadFromIndexedDB() {
+  if (!db) await openDB();
+
+  const [rooms, collections, items] = await Promise.all([
+    getAllRecords(STORE_ROOMS),
+    getAllRecords(STORE_COLLECTIONS),
+    getAllRecords(STORE_ITEMS)
+  ]);
+
+  return { rooms, collections, items };
+}
+
+async function loadData() {
+  // If not authed => IndexedDB only
+  if (!session?.user) {
+    return loadFromIndexedDB();
+  }
+
+  // Supabase-first
+  try {
+    return await loadFromSupabase();
+  } catch (e) {
+    console.warn('[render] Supabase load failed, falling back to IndexedDB:', e);
+    return loadFromIndexedDB();
+  }
+}
+
+async function supaInsert(table, payload) {
+  assertAuthed();
+  const ownerId = getOwnerId();
+  const outPayload = { ...payload, owner_id: ownerId };
+  const { data, error } = await supabaseClient.from(table).insert(outPayload).select('*').single();
+  if (error) throw error;
+  return data;
+}
+
+async function supaUpdate(table, id, payload) {
+  assertAuthed();
+  const ownerId = getOwnerId();
+  const { data, error } = await supabaseClient
+    .from(table)
+    .update(payload)
+    .eq('owner_id', ownerId)
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function supaDelete(table, id) {
+  assertAuthed();
+  const ownerId = getOwnerId();
+  const { error } = await supabaseClient.from(table).delete().eq('owner_id', ownerId).eq('id', id);
+  if (error) throw error;
+}
+
+async function ensureCollectionForRoom(roomId) {
+  // UI does not create collections; if your DB has collections required by FK,
+  // create a default one if missing.
+  // Requires collections table columns: id, room_id, owner_id.
+  assertAuthed();
+
+  const ownerId = getOwnerId();
+
+  const { data: existing, error: existingError } = await supabaseClient
+    .from('collections')
+    .select('*')
+    .eq('owner_id', ownerId)
+    .eq('room_id', roomId)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (existing) return existing;
+
+  const { data: created, error: createdError } = await supabaseClient
+    .from('collections')
+    .insert({
+      owner_id: ownerId,
+      room_id: roomId,
+      name: `Default Items for Room ${roomId}`
+    })
+    .select('*')
+    .single();
+
+  if (createdError) throw createdError;
+  return created;
+}
 
 function updateToolbar(room) {
   const search = document.getElementById("search");
@@ -1111,11 +1251,7 @@ function buildRoomView(container, room, collections, items, searchTerm) {
 async function render() {
   cleanupObjectUrls();
 
-  const [rooms, collections, items] = await Promise.all([
-    getAllRecords(STORE_ROOMS),
-    getAllRecords(STORE_COLLECTIONS),
-    getAllRecords(STORE_ITEMS)
-  ]);
+  const { rooms, collections, items } = await loadData();
 
   const container = document.getElementById("collections");
   const searchTerm = document.getElementById("search").value.trim().toLowerCase();
@@ -1135,6 +1271,7 @@ async function render() {
     buildDashboardView(container, rooms, items, searchTerm);
   }
 }
+
 
 async function addRoom() {
   if (!db) {
