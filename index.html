@@ -614,7 +614,7 @@ try {
     'session user: ' + (s?.user?.email || '(none)'),
     'session expires_at: ' + (s?.expires_at || '(none)'),
   ].join('\n');
-  document.body.appendChild(debug);
+
 } catch (e) {
   console.warn('[auth-debug] failed to render debug panel', e);
 }
