@@ -1015,6 +1015,42 @@ function updateViewHeader(room) {
   title.textContent = "";
 }
 
+function isCaseSensitiveRoomDuplicate(rooms, desiredName) {
+  return rooms.find(r => r?.name === desiredName) || null;
+}
+
+function findDuplicateItem(items, { collectionId, name, barcode }) {
+  const desiredName = name;
+  const desiredBarcode = barcode;
+
+  return items.find(it => {
+    if (it.collectionId !== collectionId) return false;
+    if (it.name !== desiredName) return false;
+
+    // If barcode exists, treat duplicate as (name + barcode).
+    if (desiredBarcode && desiredBarcode !== "") {
+      return (it.barcode || "") === desiredBarcode;
+    }
+
+    // Otherwise, fall back to exact name match ONLY.
+    // This makes manual-name adds collide with scan-created items too.
+    return true;
+  }) || null;
+}
+
+
+function safePromptNonEmpty(message) {
+  const value = prompt(message);
+  if (value === null) return null;
+  const trimmed = value.trim();
+  if (!trimmed) {
+    alert('Name cannot be empty.');
+    return undefined;
+  }
+  return trimmed;
+}
+
+
 // =========================
 // Supabase-first + IndexedDB fallback helpers
 // =========================
@@ -1282,16 +1318,24 @@ async function addRoom() {
     }
   }
 
-  const name = prompt("Room name?");
+  const name = safePromptNonEmpty("Room name?");
   if (name === null) return;
-
-  const trimmed = name.trim();
-  if (!trimmed) {
-    alert("Room name cannot be empty.");
-    return;
-  }
+  const trimmed = name;
 
   try {
+    // Duplicate detection (case-sensitive) per user.
+    // Use whatever data source loadData() chooses (Supabase when authed; IndexedDB otherwise).
+    const { rooms } = await loadData();
+    const existing = isCaseSensitiveRoomDuplicate(rooms, trimmed);
+    if (existing) {
+      const go = confirm(`A room named "${trimmed}" already exists.\n\nClick OK to open the existing room, or Cancel to pick a different name.`);
+      if (go) {
+        setView(existing.id);
+        return;
+      }
+      return;
+    }
+
     const roomId = await addRecord(STORE_ROOMS, { name: trimmed, created: Date.now() });
     await addRecord(STORE_COLLECTIONS, { name: `${trimmed} Items`, roomId, created: Date.now() });
     await render();
@@ -1300,6 +1344,7 @@ async function addRoom() {
     alert("Could not save the room. Check the browser console for details.");
   }
 }
+
 
 async function addItem(collectionId) {
   if (isAddingItem) {
@@ -1324,9 +1369,36 @@ async function addItem(collectionId) {
     }
     if (purchaseInput.cancelled) return;
 
+    // For manual addItem, barcode is currently empty.
+    // Duplicate detection per requirement (name + barcode when barcode exists)
+    // means empty barcode falls back to exact name match only.
     const collections = await getAllRecords(STORE_COLLECTIONS);
     const collection = collections.find(c => c.id === collectionId);
     const roomId = collection ? collection.roomId : null;
+
+    const { rooms, collections: allCollections, items } = await loadData();
+    const duplicate = findDuplicateItem(items, {
+      collectionId,
+      name: trimmedName,
+      barcode: ""
+    });
+
+    if (duplicate) {
+      const action = confirm(
+        `An item named "${trimmedName}" already exists in this room.` +
+        `\n\nOK = update existing item (keep its photo/receipt), Cancel = abort.`
+      );
+      if (action) {
+        duplicate.name = trimmedName;
+        duplicate.purchasePrice = purchaseInput.value;
+        duplicate.currentPrice = purchaseInput.value;
+        duplicate.updated = Date.now();
+        // keep barcode/brand/category/description as-is for update
+        await putRecord(STORE_ITEMS, duplicate);
+        await render();
+      }
+      return;
+    }
 
     await addRecord(STORE_ITEMS, {
       name: trimmedName,
@@ -1351,6 +1423,7 @@ async function addItem(collectionId) {
   }
 }
 
+
 async function addScannedItem(collectionId) {
   if (isAddingItem) {
     alert("Finish the current item before adding another.");
@@ -1367,6 +1440,39 @@ async function addScannedItem(collectionId) {
     const collections = await getAllRecords(STORE_COLLECTIONS);
     const collection = collections.find(c => c.id === collectionId);
     const roomId = collection ? collection.roomId : null;
+
+    // Duplicate detection by (collectionId + exact name + barcode)
+    const { items } = await loadData();
+    const duplicate = findDuplicateItem(items, {
+      collectionId,
+      name: details.name,
+      barcode
+    });
+
+    if (duplicate) {
+      const action = confirm(
+        `This scanned item already exists.` +
+        `\n\nExisting: ${duplicate.name}` +
+        `\nNew: ${details.name}` +
+        `\n\nOK = update existing item, Cancel = abort.`
+      );
+
+      if (action) {
+        duplicate.name = details.name;
+        duplicate.barcode = barcode;
+        duplicate.brand = details.brand;
+        duplicate.category = details.category;
+        duplicate.description = details.description;
+        duplicate.imageUrl = details.imageUrl;
+        duplicate.purchasePrice = details.price;
+        duplicate.estimatedPrice = details.price;
+        duplicate.currentPrice = details.price;
+        duplicate.updated = Date.now();
+        await putRecord(STORE_ITEMS, duplicate);
+        await render();
+      }
+      return;
+    }
 
     await addRecord(STORE_ITEMS, {
       name: details.name,
@@ -1399,6 +1505,7 @@ async function addScannedItem(collectionId) {
     isAddingItem = false;
   }
 }
+
 
 async function deleteItem(id) {
   const confirmed = confirm("Delete this item?");
