@@ -632,9 +632,8 @@ try {
 }
 
 const DB_NAME = "inventoryDB";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORE_ROOMS = "rooms";
-const STORE_COLLECTIONS = "collections";
 const STORE_ITEMS = "items";
 const STORE_AUTH = "auth";
 const FALLBACK_PRICE = null;
@@ -644,7 +643,6 @@ let db;
 let deferredPrompt = null;
 let isAddingItem = false;
 let currentRoomId = null;
-let currentCollectionId = null;
 const activeObjectUrls = new Set();
 
 function requestToPromise(request) {
@@ -665,14 +663,9 @@ function openDB() {
         nextDb.createObjectStore(STORE_ROOMS, { keyPath: "id", autoIncrement: true });
       }
 
-      if (!nextDb.objectStoreNames.contains(STORE_COLLECTIONS)) {
-        const collectionStore = nextDb.createObjectStore(STORE_COLLECTIONS, { keyPath: "id", autoIncrement: true });
-        collectionStore.createIndex("roomId", "roomId", { unique: false });
-      }
-
       if (!nextDb.objectStoreNames.contains(STORE_ITEMS)) {
         const itemStore = nextDb.createObjectStore(STORE_ITEMS, { keyPath: "id", autoIncrement: true });
-        itemStore.createIndex("collectionId", "collectionId", { unique: false });
+        itemStore.createIndex("roomId", "roomId", { unique: false });
       }
 
       if (!nextDb.objectStoreNames.contains(STORE_AUTH)) {
@@ -947,10 +940,6 @@ function sumItemValue(items) {
   }, 0);
 }
 
-function getCollectionItems(collection, items) {
-  return items.filter(item => item.collectionId === collection.id);
-}
-
 function getRoomItems(room, items) {
   return items.filter(item => item.roomId === room.id);
 }
@@ -987,7 +976,6 @@ function makeInteractiveTile(tile, callback) {
 
 function setView(roomId = null) {
   currentRoomId = roomId;
-  currentCollectionId = null;
   document.getElementById("search").value = "";
   void render();
 }
@@ -1019,12 +1007,12 @@ function isCaseSensitiveRoomDuplicate(rooms, desiredName) {
   return rooms.find(r => r?.name === desiredName) || null;
 }
 
-function findDuplicateItem(items, { collectionId, name, barcode }) {
+function findDuplicateItem(items, { roomId, name, barcode }) {
   const desiredName = name;
   const desiredBarcode = barcode;
 
   return items.find(it => {
-    if (it.collectionId !== collectionId) return false;
+    if (it.roomId !== roomId) return false;
     if (it.name !== desiredName) return false;
 
     // If barcode exists, treat duplicate as (name + barcode).
@@ -1067,52 +1055,39 @@ function getOwnerId() {
 async function loadFromSupabase() {
   assertAuthed();
 
-  // We keep collections because items have collection_id in DB.
-  // Collections will still be hidden in UI.
   const ownerId = getOwnerId();
 
-  const [{ data: rooms, error: roomsError }, { data: collections, error: collectionsError }, { data: items, error: itemsError }] = await Promise.all([
+  const [{ data: rooms, error: roomsError }, { data: items, error: itemsError }] = await Promise.all([
     supabaseClient.from('rooms').select('*').eq('owner_id', ownerId).order('created_at', { ascending: false }),
-    supabaseClient.from('collections').select('*').eq('owner_id', ownerId),
     supabaseClient.from('items').select('*').eq('owner_id', ownerId)
   ]);
 
   if (roomsError) throw roomsError;
-  if (collectionsError) throw collectionsError;
   if (itemsError) throw itemsError;
 
-  // Normalize fields to what current UI expects:
-  // - IndexedDB uses camelCase: roomId/collectionId
-  // - Supabase uses snake_case: room_id/collection_id
+  // Normalize fields to what the UI expects:
+  // - IndexedDB uses camelCase: roomId
+  // - Supabase uses snake_case: room_id
   const roomsN = (rooms || []).map(r => ({ ...r, id: Number(r.id) }));
-  const collectionsN = (collections || []).map(c => ({
-    ...c,
-    id: Number(c.id),
-    roomId: Number(c.room_id ?? c.roomId),
-  }));
   const itemsN = (items || []).map(i => ({
     ...i,
     id: Number(i.id),
-    collectionId: Number(i.collection_id ?? i.collectionId),
     roomId: Number(i.room_id ?? i.roomId),
     // UI expects either Blob or imageUrl string.
-    // image bytea -> Blob is optional; but we can still render via image_url text path.
-    // receipt bytea similarly.
   }));
 
-  return { rooms: roomsN, collections: collectionsN, items: itemsN };
+  return { rooms: roomsN, items: itemsN };
 }
 
 async function loadFromIndexedDB() {
   if (!db) await openDB();
 
-  const [rooms, collections, items] = await Promise.all([
+  const [rooms, items] = await Promise.all([
     getAllRecords(STORE_ROOMS),
-    getAllRecords(STORE_COLLECTIONS),
     getAllRecords(STORE_ITEMS)
   ]);
 
-  return { rooms, collections, items };
+  return { rooms, items };
 }
 
 async function loadData() {
@@ -1158,38 +1133,6 @@ async function supaDelete(table, id) {
   const ownerId = getOwnerId();
   const { error } = await supabaseClient.from(table).delete().eq('owner_id', ownerId).eq('id', id);
   if (error) throw error;
-}
-
-async function ensureCollectionForRoom(roomId) {
-  // UI does not create collections; if your DB has collections required by FK,
-  // create a default one if missing.
-  // Requires collections table columns: id, room_id, owner_id.
-  assertAuthed();
-
-  const ownerId = getOwnerId();
-
-  const { data: existing, error: existingError } = await supabaseClient
-    .from('collections')
-    .select('*')
-    .eq('owner_id', ownerId)
-    .eq('room_id', roomId)
-    .maybeSingle();
-
-  if (existingError) throw existingError;
-  if (existing) return existing;
-
-  const { data: created, error: createdError } = await supabaseClient
-    .from('collections')
-    .insert({
-      owner_id: ownerId,
-      room_id: roomId,
-      name: `Default Items for Room ${roomId}`
-    })
-    .select('*')
-    .single();
-
-  if (createdError) throw createdError;
-  return created;
 }
 
 function updateToolbar(room) {
@@ -1258,18 +1201,10 @@ function buildDashboardView(container, rooms, items, searchTerm) {
   container.appendChild(grid);
 }
 
-function buildRoomView(container, room, collections, items, searchTerm) {
-  const roomCollection = collections.find(c => c.roomId === room.id);
-  if (!roomCollection) {
-    container.appendChild(createElement("div", {
-      className: "empty-state",
-      text: "No items in this room."
-    }));
-    return;
-  }
-
-  const roomItems = getCollectionItems(roomCollection, items)
+function buildRoomView(container, room, items, searchTerm) {
+  const roomItems = getRoomItems(room, items)
     .filter(item => itemMatchesSearch(item, searchTerm));
+
 
   if (roomItems.length === 0) {
     container.appendChild(createElement("div", {
@@ -1287,7 +1222,7 @@ function buildRoomView(container, room, collections, items, searchTerm) {
 async function render() {
   cleanupObjectUrls();
 
-  const { rooms, collections, items } = await loadData();
+  const { rooms, items } = await loadData();
 
   const container = document.getElementById("collections");
   const searchTerm = document.getElementById("search").value.trim().toLowerCase();
@@ -1302,7 +1237,7 @@ async function render() {
   updateToolbar(room);
 
   if (room) {
-    buildRoomView(container, room, collections, items, searchTerm);
+    buildRoomView(container, room, items, searchTerm);
   } else {
     buildDashboardView(container, rooms, items, searchTerm);
   }
@@ -1336,8 +1271,7 @@ async function addRoom() {
       return;
     }
 
-    const roomId = await addRecord(STORE_ROOMS, { name: trimmed, created: Date.now() });
-    await addRecord(STORE_COLLECTIONS, { name: `${trimmed} Items`, roomId, created: Date.now() });
+    await addRecord(STORE_ROOMS, { name: trimmed, created: Date.now() });
     await render();
   } catch (err) {
     console.error("Failed to add room:", err);
@@ -1346,7 +1280,7 @@ async function addRoom() {
 }
 
 
-async function addItem(collectionId) {
+async function addItem(roomId) {
   if (isAddingItem) {
     alert("Finish the current item before adding another.");
     return;
@@ -1354,6 +1288,11 @@ async function addItem(collectionId) {
 
   isAddingItem = true;
   try {
+    if (!roomId) {
+      alert("Select a room first.");
+      return;
+    }
+
     const name = prompt("Item name?");
     if (name === null) return;
 
@@ -1372,13 +1311,9 @@ async function addItem(collectionId) {
     // For manual addItem, barcode is currently empty.
     // Duplicate detection per requirement (name + barcode when barcode exists)
     // means empty barcode falls back to exact name match only.
-    const collections = await getAllRecords(STORE_COLLECTIONS);
-    const collection = collections.find(c => c.id === collectionId);
-    const roomId = collection ? collection.roomId : null;
-
-    const { rooms, collections: allCollections, items } = await loadData();
+    const { items } = await loadData();
     const duplicate = findDuplicateItem(items, {
-      collectionId,
+      roomId,
       name: trimmedName,
       barcode: ""
     });
@@ -1397,6 +1332,8 @@ async function addItem(collectionId) {
         await putRecord(STORE_ITEMS, duplicate);
         await render();
       }
+
+      // Whether updated or aborted, stop here.
       return;
     }
 
@@ -1413,7 +1350,6 @@ async function addItem(collectionId) {
       estimatedPrice: null,
       currentPrice: purchaseInput.value,
       updated: Date.now(),
-      collectionId,
       roomId
     });
 
@@ -1424,7 +1360,8 @@ async function addItem(collectionId) {
 }
 
 
-async function addScannedItem(collectionId) {
+
+async function addScannedItem(roomId) {
   if (isAddingItem) {
     alert("Finish the current item before adding another.");
     return;
@@ -1437,14 +1374,15 @@ async function addScannedItem(collectionId) {
 
     const details = await fetchBarcodeDetails(barcode);
 
-    const collections = await getAllRecords(STORE_COLLECTIONS);
-    const collection = collections.find(c => c.id === collectionId);
-    const roomId = collection ? collection.roomId : null;
+    if (!roomId) {
+      alert("Select a room first.");
+      return;
+    }
 
-    // Duplicate detection by (collectionId + exact name + barcode)
+    // Duplicate detection (room-based): (name + barcode if barcode exists) else (name)
     const { items } = await loadData();
     const duplicate = findDuplicateItem(items, {
-      collectionId,
+      roomId,
       name: details.name,
       barcode
     });
@@ -1487,11 +1425,10 @@ async function addScannedItem(collectionId) {
       estimatedPrice: details.price,
       currentPrice: details.price,
       updated: Date.now(),
-      collectionId,
       roomId
     });
 
-    await render();
+      await render();
 
     if (!details.found) {
       alert("The item was saved with its barcode, but no product details were found.");
@@ -1902,16 +1839,11 @@ async function deleteRoom(id) {
   const confirmed = confirm("Delete this room and all its items?");
   if (!confirmed) return;
 
-  const collections = await getAllRecords(STORE_COLLECTIONS);
-  const roomCollections = collections.filter(collection => collection.roomId === id);
   const items = await getAllRecords(STORE_ITEMS);
+  const roomItems = items.filter(item => item.roomId === id);
 
-  for (const collection of roomCollections) {
-    const collectionItems = items.filter(item => item.collectionId === collection.id);
-    for (const item of collectionItems) {
-      await deleteRecord(STORE_ITEMS, item.id);
-    }
-    await deleteRecord(STORE_COLLECTIONS, collection.id);
+  for (const item of roomItems) {
+    await deleteRecord(STORE_ITEMS, item.id);
   }
 
   await deleteRecord(STORE_ROOMS, id);
@@ -2103,11 +2035,11 @@ document.getElementById("scanBtn").addEventListener("click", async () => {
     alert("Create a room first.");
     return;
   }
-  const collections = await getAllRecords(STORE_COLLECTIONS);
-  const roomCollection = collections.find(c => c.roomId === currentRoomId);
-  if (roomCollection) {
-    void addScannedItem(roomCollection.id);
+  if (!currentRoomId) {
+    alert("Select a room first.");
+    return;
   }
+  void addScannedItem(currentRoomId);
 });
 
 document.getElementById("addItemBtn").addEventListener("click", async () => {
@@ -2115,13 +2047,7 @@ document.getElementById("addItemBtn").addEventListener("click", async () => {
     alert("Select a room first.");
     return;
   }
-  const collections = await getAllRecords(STORE_COLLECTIONS);
-  const roomCollection = collections.find(c => c.roomId === currentRoomId);
-  if (!roomCollection) {
-    alert("No collection found for the selected room. Create a room again.");
-    return;
-  }
-  void addItem(roomCollection.id);
+  void addItem(currentRoomId);
 });
 
 document.getElementById("homeBtn").addEventListener("click", () => { setView(); });
