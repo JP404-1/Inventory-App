@@ -1007,13 +1007,17 @@ function isCaseSensitiveRoomDuplicate(rooms, desiredName) {
   return rooms.find(r => r?.name === desiredName) || null;
 }
 
+function normalizeNameForDuplicate(name) {
+  return (name ?? '').toString().trim();
+}
+
 function findDuplicateItem(items, { roomId, name, barcode }) {
-  const desiredName = name;
+  const desiredName = normalizeNameForDuplicate(name);
   const desiredBarcode = barcode;
 
   return items.find(it => {
-    if (it.roomId !== roomId) return false;
-    if (it.name !== desiredName) return false;
+    if (Number(it.roomId) !== Number(roomId)) return false;
+    if ((it.name ?? '') !== desiredName) return false;
 
     // If barcode exists, treat duplicate as (name + barcode).
     if (desiredBarcode && desiredBarcode !== "") {
@@ -1021,10 +1025,10 @@ function findDuplicateItem(items, { roomId, name, barcode }) {
     }
 
     // Otherwise, fall back to exact name match ONLY.
-    // This makes manual-name adds collide with scan-created items too.
     return true;
   }) || null;
 }
+
 
 
 function safePromptNonEmpty(message) {
