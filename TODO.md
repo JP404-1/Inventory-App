@@ -1,8 +1,16 @@
-- [ ] Inspect current index.html IndexedDB CRUD and media field usage
-- [x] Add/ensure Supabase column `items.receipt_url` (text) for storing storage path (option A)
-- [ ] Patch index.html to read/write rooms/items/collections from Supabase instead of IndexedDB
-- [ ] Patch index.html to persist `items.image_url` and `items.receipt_url` after storage.uploadFile
-- [ ] Patch render logic to download image/receipt from storage for items
-- [ ] Disable destructive collection deletion; auto-create default collection per room (no UI creation)
-- [ ] Manual test: signup/login, add room, add item, upload image/receipt, reload
+# Inventory App
 
+The app stores inventory data in IndexedDB and photos/receipts in localStorage.
+There is no account, sign-up, login, or Supabase dependency.
+
+Barcode lookups validate UPC/EAN/GTIN/ISBN checksums before making a request,
+try Open Library first, and fall back to UPCitemdb when no Open Library result
+is found.
+
+## Manual verification
+
+- Add a room and item, reload, and confirm the data remains.
+- Attach a photo and receipt, reload, and open both files.
+- Scan a valid ISBN and confirm Open Library data is used when available.
+- Scan a valid retail barcode and confirm UPCitemdb fallback works.
+- Try an invalid or damaged barcode and confirm no API request is made.

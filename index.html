@@ -404,63 +404,6 @@ a.tile[role="button"] {
   text-align: center;
 }
 
-/* Auth overlay (glassmorphism) */
-.auth-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 20000;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  background: rgba(0, 0, 0, 0.55);
-}
-
-.auth-overlay.show {
-  display: flex;
-}
-
-.auth-overlay::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  backdrop-filter: blur(10px);
-}
-
-.auth-modal {
-  position: relative;
-  width: min(560px, 100%);
-  border-radius: 22px;
-  border: 1px solid rgba(63, 182, 139, 0.25);
-  background: rgba(18, 30, 48, 0.55);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.4);
-  padding: 1.25rem 1.25rem 1.1rem;
-}
-
-.auth-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.auth-header h2 {
-  font-size: 1.2rem;
-}
-
-.auth-fields input {
-  width: 100%;
-}
-
-.auth-actions button.secondary {
-  background: rgba(29, 41, 64, 0.9);
-}
-
-#authStatus {
-  color: var(--muted);
-}
-
 a {
   color: #93d6bb;
 }
@@ -492,40 +435,8 @@ a {
   </div>
   <div class="action-row">
     <button id="installBtn" class="secondary" hidden>Install App</button>
-    <div id="authControls" class="action-row" style="gap:0.5rem; margin-left:0.75rem; align-items: center;">
-      <button id="openAuthOverlayBtn" class="secondary">Log in</button>
-      <button id="signOutBtn" class="secondary" hidden>Sign out</button>
-    </div>
   </div>
 </header>
-
-<!-- Auth overlay (glassmorphism) -->
-<div id="authOverlay" class="auth-overlay" aria-hidden="true" role="dialog" aria-modal="true">
-  <div class="auth-modal">
-    <div class="auth-header">
-      <h2>Welcome</h2>
-      <button id="closeAuthOverlayBtn" class="secondary" style="padding:0.4rem 0.75rem;">Cancel</button>
-    </div>
-
-    <p class="muted" style="margin-top:-0.25rem;">Sign in to unlock online features.</p>
-
-    <div class="auth-fields" style="margin-top:1rem; display:grid; gap:0.75rem;">
-      <input id="emailInput" type="email" placeholder="Email" autocomplete="email" />
-      <input id="passwordInput" type="password" placeholder="Password" autocomplete="current-password" />
-    </div>
-
-    <div class="auth-actions" style="display:flex; gap:0.75rem; margin-top:1rem; flex-wrap:wrap;">
-      <button id="loginBtn" class="secondary" style="flex:1; min-width:170px;">Log in</button>
-      <button id="signupBtn" class="secondary" style="flex:1; min-width:170px;">Sign up</button>
-    </div>
-
-    <p id="authStatus" class="muted" style="min-height:1.2em; margin-top:0.75rem; font-size:0.92rem;"></p>
-  </div>
-</div>
-
-
-<!-- Supabase runtime config for plain static hosting -->
-<script src="./supabase-runtime-config.js"></script>
 
 <main class="app-shell">
   <section class="summary">
@@ -564,78 +475,12 @@ a {
 </main>
 
 <script type="module">
-import { initAuth, getSession, signInWithPassword, signUpWithPassword, signOut, onAuthStateChange } from './supabase-auth.js';
-import { supabaseClient } from './supabase-client.js';
-
-import { storage, setSupabaseClient } from './supabase-storage.js';
-
-function showFatalError(message) {
-  const el = document.createElement('div');
-  el.className = 'access-denied';
-  el.innerHTML = `
-    <div style="max-width:720px;">
-      <h2 style="margin-bottom:0.75rem;">App failed to start</h2>
-      <p style="color:var(--muted); margin-bottom:1rem;">${message}</p>
-      <p style="color:var(--muted); font-size:12px;">(You can still use the browser console to troubleshoot.)</p>
-      <button style="margin-top:1rem;" onclick="location.reload()">Reload</button>
-    </div>
-  `;
-  document.body.appendChild(el);
-}
-
-// Initialize auth + bind storage to authenticated client.
-let session = null;
-try {
-  if (supabaseClient) {
-    setSupabaseClient(supabaseClient);
-    await initAuth();
-    session = getSession();
-    onAuthStateChange(s => { session = s; setAuthUI(!!session && !!session.user); });
-  } else {
-    console.warn('[startup] Supabase client is not initialized; running offline-only mode.');
-  }
-} catch (e) {
-  console.error('[startup] Supabase/auth init failed:', e);
-  setAuthUI(false);
-}
-
-
-try {
-  const params = new URLSearchParams(window.location.search);
-  console.log('[auth-debug] location.href =', window.location.href);
-  console.log('[auth-debug] search params =', Object.fromEntries(params.entries()));
-  const debug = document.createElement('pre');
-  debug.style.cssText = 'position:fixed;left:12px;bottom:12px;max-width:520px;max-height:38vh;overflow:auto;z-index:99999;background:rgba(0,0,0,.6);border:1px solid rgba(63,182,139,.35);padding:10px;border-radius:10px;color:#dff6ea;font-size:12px;';
-  const s = getSession();
-  debug.textContent = [
-    'Supabase auth-debug',
-    'href: ' + window.location.href,
-    'params: ' + JSON.stringify(Object.fromEntries(params.entries())),
-    'session user: ' + (s?.user?.email || '(none)'),
-    'session expires_at: ' + (s?.expires_at || '(none)'),
-  ].join('\n');
-
-} catch (e) {
-  console.warn('[auth-debug] failed to render debug panel', e);
-}
-
-// Safety re-check after initAuth.
-try {
-  if (supabaseClient) {
-    const { data } = await supabaseClient.auth.getSession();
-    session = data.session || null;
-    setAuthUI(!!session && !!session.user);
-    console.log('[auth-debug] getSession after initAuth =>', { user: session?.user?.email, hasSession: !!session });
-  }
-} catch (e) {
-  console.warn('[auth-debug] getSession after initAuth failed', e);
-}
+import { storage } from './local-storage-files.js';
 
 const DB_NAME = "inventoryDB";
 const DB_VERSION = 5;
 const STORE_ROOMS = "rooms";
 const STORE_ITEMS = "items";
-const STORE_AUTH = "auth";
 const FALLBACK_PRICE = null;
 const PRICE_LOOKUP_TIMEOUT_MS = 8000;
 
@@ -668,9 +513,6 @@ function openDB() {
         itemStore.createIndex("roomId", "roomId", { unique: false });
       }
 
-      if (!nextDb.objectStoreNames.contains(STORE_AUTH)) {
-        nextDb.createObjectStore(STORE_AUTH, { keyPath: "key" });
-      }
     };
 
     request.onsuccess = event => {
@@ -864,14 +706,12 @@ function buildItemCard(item) {
   }
   details.append(priceLine, updated);
 
-  const isAuthed = !!(session && session.user);
-
   if (item.image instanceof Blob) {
     const image = createElement("img", { className: "thumb" });
     image.alt = `${item.name} photo`;
     image.src = trackedObjectUrl(item.image);
     media.appendChild(image);
-  } else if (item.imagePath && isAuthed) {
+  } else if (item.imagePath) {
     const placeholder = createElement("div", { className: "thumb" });
     placeholder.style.display = 'grid';
     placeholder.style.placeItems = 'center';
@@ -905,7 +745,7 @@ function buildItemCard(item) {
     receipt.target = "_blank";
     receipt.rel = "noopener noreferrer";
     media.appendChild(receipt);
-  } else if (item.receiptPath && isAuthed) {
+  } else if (item.receiptPath) {
     const receipt = createElement("a", { text: "Open receipt" });
     receipt.href = '#';
     receipt.addEventListener('click', async (e) => {
@@ -1043,46 +883,6 @@ function safePromptNonEmpty(message) {
 }
 
 
-// =========================
-// Supabase-first + IndexedDB fallback helpers
-// =========================
-
-function assertAuthed() {
-  if (!session?.user) throw new Error('Not authenticated');
-}
-
-function getOwnerId() {
-  // owner_id is uuid in your DB, and matches session.user.id
-  return session?.user?.id;
-}
-
-async function loadFromSupabase() {
-  assertAuthed();
-
-  const ownerId = getOwnerId();
-
-  const [{ data: rooms, error: roomsError }, { data: items, error: itemsError }] = await Promise.all([
-    supabaseClient.from('rooms').select('*').eq('owner_id', ownerId).order('created_at', { ascending: false }),
-    supabaseClient.from('items').select('*').eq('owner_id', ownerId)
-  ]);
-
-  if (roomsError) throw roomsError;
-  if (itemsError) throw itemsError;
-
-  // Normalize fields to what the UI expects:
-  // - IndexedDB uses camelCase: roomId
-  // - Supabase uses snake_case: room_id
-  const roomsN = (rooms || []).map(r => ({ ...r, id: Number(r.id) }));
-  const itemsN = (items || []).map(i => ({
-    ...i,
-    id: Number(i.id),
-    roomId: Number(i.room_id ?? i.roomId),
-    // UI expects either Blob or imageUrl string.
-  }));
-
-  return { rooms: roomsN, items: itemsN };
-}
-
 async function loadFromIndexedDB() {
   if (!db) await openDB();
 
@@ -1095,48 +895,7 @@ async function loadFromIndexedDB() {
 }
 
 async function loadData() {
-  // If not authed => IndexedDB only
-  if (!session?.user) {
-    return loadFromIndexedDB();
-  }
-
-  // Supabase-first
-  try {
-    return await loadFromSupabase();
-  } catch (e) {
-    console.warn('[render] Supabase load failed, falling back to IndexedDB:', e);
-    return loadFromIndexedDB();
-  }
-}
-
-async function supaInsert(table, payload) {
-  assertAuthed();
-  const ownerId = getOwnerId();
-  const outPayload = { ...payload, owner_id: ownerId };
-  const { data, error } = await supabaseClient.from(table).insert(outPayload).select('*').single();
-  if (error) throw error;
-  return data;
-}
-
-async function supaUpdate(table, id, payload) {
-  assertAuthed();
-  const ownerId = getOwnerId();
-  const { data, error } = await supabaseClient
-    .from(table)
-    .update(payload)
-    .eq('owner_id', ownerId)
-    .eq('id', id)
-    .select('*')
-    .single();
-  if (error) throw error;
-  return data;
-}
-
-async function supaDelete(table, id) {
-  assertAuthed();
-  const ownerId = getOwnerId();
-  const { error } = await supabaseClient.from(table).delete().eq('owner_id', ownerId).eq('id', id);
-  if (error) throw error;
+  return loadFromIndexedDB();
 }
 
 function updateToolbar(room) {
@@ -1263,7 +1022,6 @@ async function addRoom() {
 
   try {
     // Duplicate detection (case-sensitive) per user.
-    // Use whatever data source loadData() chooses (Supabase when authed; IndexedDB otherwise).
     const { rooms } = await loadData();
     const existing = isCaseSensitiveRoomDuplicate(rooms, trimmed);
     if (existing) {
@@ -1376,7 +1134,14 @@ async function addScannedItem(roomId) {
     const barcode = await scanBarcode();
     if (!barcode || typeof barcode !== "string") return;
 
-    const details = await fetchBarcodeDetails(barcode);
+    const normalizedBarcode = isSupportedBarcode(barcode);
+    if (!normalizedBarcode) {
+      alert("Unsupported barcode. Please scan a valid UPC, EAN, GTIN, or ISBN barcode.");
+      return;
+    }
+
+    const details = await fetchBarcodeDetails(normalizedBarcode);
+    const savedBarcode = normalizedBarcode;
 
     if (!roomId) {
       alert("Select a room first.");
@@ -1388,7 +1153,7 @@ async function addScannedItem(roomId) {
     const duplicate = findDuplicateItem(items, {
       roomId,
       name: details.name,
-      barcode
+      barcode: savedBarcode
     });
 
     if (duplicate) {
@@ -1401,7 +1166,7 @@ async function addScannedItem(roomId) {
 
       if (action) {
         duplicate.name = details.name;
-        duplicate.barcode = barcode;
+        duplicate.barcode = savedBarcode;
         duplicate.brand = details.brand;
         duplicate.category = details.category;
         duplicate.description = details.description;
@@ -1418,7 +1183,7 @@ async function addScannedItem(roomId) {
 
     await addRecord(STORE_ITEMS, {
       name: details.name,
-      barcode,
+      barcode: savedBarcode,
       brand: details.brand,
       category: details.category,
       description: details.description,
@@ -1435,12 +1200,12 @@ async function addScannedItem(roomId) {
     await render();
 
     if (!details.found) {
-      const manual = await manualItemEntryFromBarcode(barcode, details.name);
+      const manual = await manualItemEntryFromBarcode(savedBarcode, details.name);
       if (manual) {
         // Update by re-scanning current items and matching by barcode+room
         // (duplicate item cases are handled above; here we only handle the "not found" path).
         const updatedItems = await getAllRecords(STORE_ITEMS);
-        const match = updatedItems.find(it => it.roomId === roomId && it.barcode === barcode);
+        const match = updatedItems.find(it => it.roomId === roomId && it.barcode === savedBarcode);
         if (match) {
           match.name = manual.name;
           match.purchasePrice = manual.price;
@@ -1470,18 +1235,15 @@ async function deleteItem(id) {
 
   const item = await getRecord(STORE_ITEMS, id);
   if (item) {
-    const isAuthed = !!(session && session.user);
-    if (isAuthed) {
-      try {
-        if (item.imagePath) await storage.deleteFile(item.imagePath, 'image');
-      } catch (e) {
-        console.warn('Failed to delete photo', e);
-      }
-      try {
-        if (item.receiptPath) await storage.deleteFile(item.receiptPath, 'receipt');
-      } catch (e) {
-        console.warn('Failed to delete receipt', e);
-      }
+    try {
+      if (item.imagePath) storage.deleteFile(item.imagePath);
+    } catch (e) {
+      console.warn('Failed to delete photo', e);
+    }
+    try {
+      if (item.receiptPath) storage.deleteFile(item.receiptPath);
+    } catch (e) {
+      console.warn('Failed to delete receipt', e);
     }
   }
 
@@ -1536,21 +1298,17 @@ async function updateItemFile(id, field, type) {
 
   item[field] = file;
 
-  const isAuthed = !!(session && session.user);
-  const userId = session?.user?.id;
   const bucketType = field === 'image' ? 'image' : 'receipt';
-  const storagePath = `${userId}/${crypto.randomUUID()}${field === 'image' ? '.jpg' : '.pdf'}`;
+  const storagePath = `items/${item.id}/${crypto.randomUUID()}${field === 'image' ? '.jpg' : '.pdf'}`;
 
-  if (isAuthed) {
-    try {
-      const upload = await storage.uploadFile(file, storagePath, bucketType);
-      if (upload?.success && upload.source === 'supabase') {
-        if (field === 'image') item.imagePath = storagePath;
-        if (field === 'receipt') item.receiptPath = storagePath;
-      }
-    } catch (e) {
-      console.warn('Upload failed; keeping offline backup only.', e);
+  try {
+    const upload = await storage.uploadFile(file, storagePath, bucketType);
+    if (upload?.success && upload.source === 'localStorage') {
+      if (field === 'image') item.imagePath = storagePath;
+      if (field === 'receipt') item.receiptPath = storagePath;
     }
+  } catch (e) {
+    console.warn('Local file storage failed; keeping the item without a file path.', e);
   }
 
   item.updated = Date.now();
@@ -1580,9 +1338,15 @@ async function updateItemBarcode(id, barcode) {
     const item = await getRecord(STORE_ITEMS, id);
     if (!item) return;
 
-    const details = await fetchBarcodeDetails(barcode);
+    const normalizedBarcode = isSupportedBarcode(barcode);
+    if (!normalizedBarcode) {
+      alert("Unsupported barcode. Please scan a valid UPC, EAN, GTIN, or ISBN barcode.");
+      return;
+    }
 
-    item.barcode = barcode;
+    const details = await fetchBarcodeDetails(normalizedBarcode);
+
+    item.barcode = normalizedBarcode;
     item.brand = item.brand || details.brand;
     item.category = item.category || details.category;
     item.description = item.description || details.description;
@@ -1700,6 +1464,35 @@ function cleanLookupText(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeBarcode(value) {
+  return cleanLookupText(value).replace(/[\s-]/g, "").toUpperCase();
+}
+
+function hasValidBarcodeChecksum(code) {
+  if (/^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(code)) {
+    const digits = code.split("").map(Number);
+    const checkDigit = digits.pop();
+    const sum = digits.reverse().reduce((total, digit, index) => (
+      total + digit * (index % 2 === 0 ? 3 : 1)
+    ), 0);
+    return (10 - (sum % 10)) % 10 === checkDigit;
+  }
+
+  if (/^\d{9}[\dX]$/.test(code)) {
+    const sum = code.split("").reduce((total, digit, index) => (
+      total + (digit === "X" ? 10 : Number(digit)) * (10 - index)
+    ), 0);
+    return sum % 11 === 0;
+  }
+
+  return false;
+}
+
+function isSupportedBarcode(value) {
+  const code = normalizeBarcode(value);
+  return hasValidBarcodeChecksum(code) ? code : null;
+}
+
 function limitLookupText(value, maxLength = 180) {
   const text = cleanLookupText(value);
   if (text.length <= maxLength) return text;
@@ -1774,93 +1567,6 @@ async function fetchBarcodeLookupUPCItemDB(barcode) {
   }
 }
 
-async function fetchBarcodeLookupOpenFoodFacts(barcode) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), PRICE_LOOKUP_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(
-      `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(barcode)}.json`,
-      { signal: controller.signal }
-    );
-
-    if (!response.ok) return null;
-    const data = await response.json();
-    if (!data || data.status !== 1) return null;
-
-    const product = data.product || {};
-
-    return {
-      title: cleanLookupText(product.product_name),
-      brand: cleanLookupText(product.brands),
-      category: cleanLookupText(
-        Array.isArray(product.categories_tags) && product.categories_tags.length
-          ? product.categories_tags[0]
-          : product.categories
-      ),
-      description: limitLookupText(
-        cleanLookupText(product.generic_name || product.ingredients_text || '')
-      ),
-      images: product.image_front_url ? [product.image_front_url] : [],
-
-      // Keep empty so existing price extraction logic returns null.
-      lowest_recorded_price: null,
-      offers: []
-    };
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function fetchBarcodeLookupOpenFoodFactsV2(barcode) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), PRICE_LOOKUP_TIMEOUT_MS);
-
-  try {
-    // Free OpenFoodFacts v2 endpoint
-    const response = await fetch(
-      `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`,
-      { signal: controller.signal }
-    );
-
-    if (!response.ok) return null;
-    const data = await response.json();
-
-    // v2 uses either { status, product } or { status: 1, data: { product } } depending on deployment/version.
-    // Normalize defensively.
-    const status = data?.status ?? data?.code ?? null;
-    const product = data?.product || data?.data?.product || data?.data || data?.product_data || null;
-    if (!product) return null;
-    if (status !== null && status !== 1) return null;
-
-    // Common fields:
-    // - product_name, brands, categories_tags, generic_name, ingredients_text, image_front_url
-    return {
-      title: cleanLookupText(product.product_name),
-      brand: cleanLookupText(product.brands),
-      category: cleanLookupText(
-        Array.isArray(product.categories_tags) && product.categories_tags.length
-          ? product.categories_tags[0]
-          : product.categories
-      ),
-      description: limitLookupText(
-        cleanLookupText(product.generic_name || product.ingredients_text || '')
-      ),
-      images: product.image_front_url ? [product.image_front_url] : [],
-
-      // Keep empty so existing price extraction logic returns null.
-      lowest_recorded_price: null,
-      offers: []
-    };
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 async function fetchBarcodeLookupOpenLibraryISBN(barcode) {
   // Optional "free" helper for ISBN-like barcodes.
   // Many UPC/EAN barcodes won't work here; this is purely for extra coverage.
@@ -1904,39 +1610,24 @@ async function fetchBarcodeLookupOpenLibraryISBN(barcode) {
 
 // Multi-provider orchestrator (ordered fallbacks)
 async function fetchBarcodeLookup(barcode) {
-  const code = cleanLookupText(barcode);
+  const code = isSupportedBarcode(barcode);
   if (!code) return null;
 
-  // Provider 1: UPCItemDB (trial endpoint)
-  try {
-    const item = await fetchBarcodeLookupUPCItemDB(code);
-    if (item) return item;
-  } catch (e) {
-    console.warn('[barcode] UPCItemDB lookup failed', e);
-  }
-
-  // Provider 2: OpenFoodFacts v2 (newer)
-  try {
-    const item = await fetchBarcodeLookupOpenFoodFactsV2(code);
-    if (item) return item;
-  } catch (e) {
-    console.warn('[barcode] OpenFoodFacts v2 lookup failed', e);
-  }
-
-  // Provider 3: OpenFoodFacts v0 (existing)
-  try {
-    const item = await fetchBarcodeLookupOpenFoodFacts(code);
-    if (item) return item;
-  } catch (e) {
-    console.warn('[barcode] OpenFoodFacts v0 lookup failed', e);
-  }
-
-  // Provider 4: OpenLibrary ISBN (extra free coverage for ISBN barcodes)
+  // ISBNs are routed to Open Library first; other valid retail barcodes
+  // are also tried there so books can be resolved before retail lookup.
   try {
     const item = await fetchBarcodeLookupOpenLibraryISBN(code);
     if (item) return item;
   } catch (e) {
-    console.warn('[barcode] OpenLibrary lookup failed', e);
+    console.warn('[barcode] Open Library lookup failed', e);
+  }
+
+  // UPCitemdb is the fallback for valid retail barcodes.
+  try {
+    const item = await fetchBarcodeLookupUPCItemDB(code);
+    if (item) return item;
+  } catch (e) {
+    console.warn('[barcode] UPCitemdb lookup failed', e);
   }
 
   return null;
@@ -1944,11 +1635,16 @@ async function fetchBarcodeLookup(barcode) {
 
 
 async function fetchBarcodeDetails(barcode) {
-  const item = await fetchBarcodeLookup(barcode);
+  const normalizedBarcode = isSupportedBarcode(barcode);
+  if (!normalizedBarcode) {
+    throw new Error("Unsupported barcode. Use a valid UPC, EAN, GTIN, or ISBN barcode.");
+  }
+
+  const item = await fetchBarcodeLookup(normalizedBarcode);
   if (!item) {
     return {
       found: false,
-      name: `Scanned item ${barcode}`,
+      name: `Scanned item ${normalizedBarcode}`,
       brand: "",
       category: "",
       description: "",
@@ -1967,7 +1663,7 @@ async function fetchBarcodeDetails(barcode) {
 
   return {
     found: true,
-    name: title || [brand, category].filter(Boolean).join(" ") || `Scanned item ${barcode}`,
+    name: title || [brand, category].filter(Boolean).join(" ") || `Scanned item ${normalizedBarcode}`,
     brand,
     category,
     description: description === title ? "" : description,
@@ -1977,7 +1673,9 @@ async function fetchBarcodeDetails(barcode) {
 }
 
 async function fetchPrice(barcode) {
-  const item = await fetchBarcodeLookup(barcode);
+  const normalizedBarcode = isSupportedBarcode(barcode);
+  if (!normalizedBarcode) return null;
+  const item = await fetchBarcodeLookup(normalizedBarcode);
   return extractLookupPrice(item);
 }
 
@@ -2065,167 +1763,6 @@ async function deleteRoom(id) {
   await render();
 }
 
-let authMode = 'login';
-
-function setAuthUI(isAuthed) {
-  const overlay = document.getElementById('authOverlay');
-  const openBtn = document.getElementById('openAuthOverlayBtn');
-  const signOutBtn = document.getElementById('signOutBtn');
-  const emailInput = document.getElementById('emailInput');
-  const passwordInput = document.getElementById('passwordInput');
-  const loginBtn = document.getElementById('loginBtn');
-  const signupBtn = document.getElementById('signupBtn');
-
-  if (isAuthed) {
-    overlay?.classList.remove('show');
-    overlay?.setAttribute('aria-hidden', 'true');
-    openBtn && (openBtn.hidden = true);
-    if (signOutBtn) signOutBtn.hidden = false;
-    return;
-  }
-
-  // Not authed => show overlay.
-  overlay?.classList.add('show');
-  overlay?.setAttribute('aria-hidden', 'false');
-  if (openBtn) openBtn.hidden = true;
-  if (signOutBtn) signOutBtn.hidden = true;
-
-  // Mode visibility: both buttons visible per requirement.
-  if (loginBtn) loginBtn.hidden = false;
-  if (signupBtn) signupBtn.hidden = false;
-  if (emailInput) emailInput.hidden = false;
-  if (passwordInput) passwordInput.hidden = false;
-}
-
-
-function looksLikeUserNotFound(err) {
-  const msg = (err?.message || '').toLowerCase();
-  const status = err?.status;
-  const code = err?.code;
-
-  // Heuristic: Supabase error surface varies by auth settings.
-  return (
-    msg.includes('user') && (msg.includes('not found') || msg.includes('no user') || msg.includes('invalid login'))
-    || msg.includes('invalid login credentials')
-    || msg.includes('bad credentials')
-    || status === 400
-    || code === 'invalid_login'
-  );
-}
-
-function wireAuthUI() {
-  const loginBtn = document.getElementById('loginBtn');
-  const signupBtn = document.getElementById('signupBtn');
-  const signOutBtn = document.getElementById('signOutBtn');
-  const emailInput = document.getElementById('emailInput');
-  const passwordInput = document.getElementById('passwordInput');
-  const overlay = document.getElementById('authOverlay');
-  const openBtn = document.getElementById('openAuthOverlayBtn');
-  const closeBtn = document.getElementById('closeAuthOverlayBtn');
-  const authStatus = document.getElementById('authStatus');
-
-  const setStatus = (text) => {
-    if (authStatus) authStatus.textContent = text || '';
-  };
-
-  const readCreds = () => {
-    const email = (emailInput?.value || '').trim();
-    const password = passwordInput?.value || '';
-    return { email, password };
-  };
-
-  const showOverlay = () => {
-    overlay?.classList.add('show');
-    overlay?.setAttribute('aria-hidden', 'false');
-  };
-  const hideOverlay = () => {
-    overlay?.classList.remove('show');
-    overlay?.setAttribute('aria-hidden', 'true');
-  };
-
-  if (openBtn) {
-    openBtn.addEventListener('click', () => {
-      setStatus('');
-      showOverlay();
-    });
-  }
-
-  if (closeBtn) {
-    closeBtn.addEventListener('click', () => {
-      setStatus('');
-      hideOverlay();
-    });
-  }
-
-  overlay?.addEventListener('click', (e) => {
-    if (e.target === overlay) hideOverlay();
-  });
-
-  if (loginBtn) {
-    loginBtn.addEventListener('click', async () => {
-      const { email, password } = readCreds();
-      if (!email) return alert('Enter an email address.');
-      if (!password) return alert('Enter your password.');
-
-      try {
-        setStatus('Logging you in...');
-        await signInWithPassword(email, password);
-        setAuthUI(true);
-        hideOverlay();
-      } catch (e) {
-        console.error('signInWithPassword failed', e);
-        setStatus('');
-
-        // Show the actual Supabase error message/code so you can fix config/confirmation issues.
-        const status = e?.status;
-        const code = e?.code;
-        const message = e?.message || String(e);
-        const detailsLine = [status ? `status: ${status}` : null, code ? `code: ${code}` : null].filter(Boolean).join(', ');
-
-        // Keep the friendly message only for the specific heuristic.
-        if (looksLikeUserNotFound(e)) {
-          alert(`Login failed: account not found for that email.\n\nSupabase says: ${message}${detailsLine ? ` (${detailsLine})` : ''}`);
-          return;
-        }
-
-        alert(`Login failed.\n\nSupabase says: ${message}${detailsLine ? ` (${detailsLine})` : ''}`);
-      }
-    });
-  }
-
-  if (signupBtn) {
-    signupBtn.addEventListener('click', async () => {
-      const { email, password } = readCreds();
-      if (!email) return alert('Enter an email address.');
-      if (!password) return alert('Enter a password.');
-
-      try {
-        setStatus('Creating account...');
-        await signUpWithPassword(email, password);
-        setAuthUI(false);
-        alert('Account created. Logging you in...');
-      } catch (e) {
-        console.error('signUpWithPassword failed', e);
-        setStatus('');
-        alert('Sign up failed. Check console for details.');
-      }
-    });
-  }
-
-  if (signOutBtn) {
-    signOutBtn.addEventListener('click', async () => {
-      try {
-        await signOut();
-        location.reload();
-      } catch (e) {
-        console.error('signOut failed', e);
-      }
-    });
-  }
-}
-
-
-
 window.addEventListener("beforeinstallprompt", event => {
   event.preventDefault();
   deferredPrompt = event;
@@ -2268,30 +1805,6 @@ document.getElementById("homeBtn").addEventListener("click", () => { setView(); 
 window.addEventListener("pagehide", cleanupObjectUrls);
 
 (async () => {
-  wireAuthUI();
-  setAuthUI(!!session && !!session.user);
-
-  // Ensure overlay shown when logged out.
-  if (!(session && session.user)) {
-    setAuthUI(false);
-  }
-
-  // If Supabase email OTP redirect landed us here with an error hash (otp_expired / access_denied),
-  // keep the app usable and show the user a helpful message.
-  try {
-    const hash = window.location.hash || '';
-    if (hash.includes('otp_expired') || hash.toLowerCase().includes('expired')) {
-      alert('Email link/OTP expired. Sign in again to request a fresh confirmation email.');
-    }
-    if (hash.includes('access_denied')) {
-      // Email confirmation / invalid link generally shows up here.
-      // We already show the alert above for otp_expired; keep this as a backup.
-      console.warn('[auth-debug] access_denied hash:', hash);
-    }
-  } catch (e) {
-    console.warn('[auth-debug] failed to parse hash for auth errors', e);
-  }
-
   await openDB();
 
   await render();
@@ -2308,4 +1821,3 @@ window.addEventListener("pagehide", cleanupObjectUrls);
 </script>
 </body>
 </html>
-

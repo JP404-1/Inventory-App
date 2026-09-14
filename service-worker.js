@@ -1,10 +1,10 @@
-const CACHE_NAME = "inventory-cache-v8";
+const CACHE_NAME = "inventory-cache-v9";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./icon 192.png",
-  "./icon 512.png"
+  "./icon-192.png",
+  "./icon-512.png"
 ];
 const OPTIONAL_CACHE = [
   "https://unpkg.com/@zxing/browser@latest"
